@@ -47,6 +47,7 @@ import {
   XMarkIcon,
   SunIcon,
   MoonIcon,
+  ArrowDownTrayIcon,
 } from "./components/icons";
 import useHistoryState from "./hooks/useHistoryState";
 import { useTheme } from "./contexts/ThemeContext";
@@ -4704,77 +4705,146 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white h-screen w-full flex flex-col overflow-hidden transition-colors duration-200">
-      <header className="flex flex-col px-4 py-2 bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex-shrink-0 z-20 gap-2">
-        {/* 최상단: 제목과 모델 이름 */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <LogoIcon className="h-6 w-6 text-blue-400 flex-shrink-0" />
-            <h1 className="text-xl font-bold text-blue-600 dark:text-blue-300 tracking-wide whitespace-nowrap">
+      <header className="flex flex-col px-4 py-1.5 bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex-shrink-0 z-20 relative overflow-visible">
+        {/* 첫 번째 줄: 제목 및 모델 이름 */}
+        <div className="flex items-center w-full">
+          <div className="flex items-center gap-2 md:gap-4 flex-1 min-w-0">
+            <LogoIcon className="h-5 w-5 md:h-6 md:w-6 text-blue-500 dark:text-blue-400 flex-shrink-0" />
+            <h1 className="text-base md:text-xl font-bold text-blue-600 dark:text-blue-300 tracking-wide flex-shrink-0">
               Life Matrix Flow
             </h1>
-          </div>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-gray-400 dark:text-gray-600">|</span>
-            {isEditingProductName ? (
-              <input
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-                onBlur={() => setIsEditingProductName(false)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === "Escape")
-                    setIsEditingProductName(false);
-                }}
-                className="bg-gray-100 dark:bg-gray-800 text-lg font-semibold text-gray-900 dark:text-white px-2 py-1 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full max-w-md"
-                autoFocus
-              />
-            ) : (
-              <h2
-                onClick={() => setIsEditingProductName(true)}
-                className="text-lg font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 px-2 py-1 rounded-md cursor-pointer truncate max-w-md"
-                title="Click to edit product name"
-              >
-                {productName}
-              </h2>
-            )}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-gray-400 dark:text-gray-600 hidden md:inline">|</span>
+              {isEditingProductName ? (
+                <input
+                  value={productName}
+                  onChange={(e) => setProductName(e.target.value)}
+                  onBlur={() => setIsEditingProductName(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === "Escape") setIsEditingProductName(false);
+                  }}
+                  className="bg-gray-100 dark:bg-gray-800 text-sm md:text-lg font-semibold text-gray-900 dark:text-white px-2 py-1 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0"
+                  autoFocus
+                />
+              ) : (
+                <h2
+                  onClick={() => setIsEditingProductName(true)}
+                  className="text-sm md:text-lg font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 px-2 py-1 rounded-md cursor-pointer truncate"
+                  title="Click to edit product name"
+                >
+                  {productName}
+                </h2>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* 버튼들: Samples, Load, Save 등 */}
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
+        {/* 두 번째 줄: 테마, Undo/Redo, Set Folder, Load, Save, Run All */}
+        <div className="flex items-center justify-end gap-2 w-full overflow-x-auto scrollbar-hide mt-1">
+          <button
+            onClick={toggleTheme}
+            className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
+            title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          >
+            {theme === "dark" ? (
+              <SunIcon className="h-5 w-5 text-yellow-400" />
+            ) : (
+              <MoonIcon className="h-5 w-5 text-gray-700" />
+            )}
+          </button>
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+            title="Undo (Ctrl+Z)"
+          >
+            <ArrowUturnLeftIcon className="h-5 w-5" />
+          </button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+            title="Redo (Ctrl+Y)"
+          >
+            <ArrowUturnRightIcon className="h-5 w-5" />
+          </button>
+          <div className="h-5 border-l border-gray-700"></div>
+          <button
+            onClick={handleSetFolder}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-md font-semibold transition-colors flex-shrink-0"
+            title="Set Save Folder"
+          >
+            <FolderOpenIcon className="h-4 w-4" />
+            <span>Set Folder</span>
+          </button>
+          <button
+            onClick={handleLoadPipeline}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-md font-semibold transition-colors flex-shrink-0"
+            title="Load Pipeline"
+          >
+            <FolderOpenIcon className="h-4 w-4" />
+            <span>Load</span>
+          </button>
+          <button
+            onClick={handleSavePipeline}
+            disabled={!isDirty}
+            className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 text-white dark:text-white ${
+              !isDirty
+                ? "bg-gray-400 dark:bg-gray-600 cursor-not-allowed opacity-50"
+                : "bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600"
+            }`}
+            title="Save Pipeline"
+          >
+            {saveButtonText === "Save" ? (
+              <ArrowDownTrayIcon className="h-4 w-4" />
+            ) : (
+              <CheckIcon className="h-4 w-4" />
+            )}
+            <span>{saveButtonText}</span>
+          </button>
+          <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
+          <button
+            onClick={() => runSimulation()}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-green-600 hover:bg-green-500 text-white"
+            title="Run All Modules"
+          >
+            <PlayIcon className="h-4 w-4" />
+            <span>Run All</span>
+          </button>
+        </div>
+
+        {/* 세 번째 줄: 햄버거(사이드바), Samples, My Work(왼쪽) | Code/Terminal(오른쪽) */}
+        <div className="flex items-center justify-between gap-1 md:gap-2 w-full mt-1 overflow-visible">
+          <div className="flex items-center gap-1 md:gap-2">
             <button
               onClick={() => setIsSidebarVisible((prev) => !prev)}
-              className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors"
+              className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
+              aria-label="Toggle modules panel"
               title="Toggle Module Sidebar"
             >
               <Bars3Icon className="h-5 w-5" />
             </button>
-
             <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
-
-            {/* Samples Button */}
             <button
               onClick={() => {
                 setIsSampleMenuOpen(true);
                 setIsSamplesMenuOpen(false);
                 setIsMyWorkMenuOpen(false);
               }}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200"
               title="Samples"
             >
               <BeakerIcon className="h-4 w-4" />
-              Samples
+              <span>Samples</span>
             </button>
-
-            {/* My Work Button */}
-            <div className="relative my-work-menu-container">
+            <div className="relative flex-shrink-0" style={{ zIndex: 1000 }}>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   setIsMyWorkMenuOpen(!isMyWorkMenuOpen);
                   setIsSamplesMenuOpen(false);
                 }}
-                className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors ${
+                className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 ${
                   isMyWorkMenuOpen
                     ? "bg-purple-600 text-white"
                     : "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200"
@@ -4782,45 +4852,41 @@ const App: React.FC = () => {
                 title="My Personal Work"
               >
                 <FolderOpenIcon className="h-4 w-4" />
-                My Work
+                <span>My Work</span>
               </button>
               {isMyWorkMenuOpen && (
-                <div 
-                  className="absolute top-full left-0 mt-2 w-56 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 overflow-hidden"
+                <div
+                  className="absolute top-full left-0 mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-xl min-w-[200px]"
+                  style={{ zIndex: 9999 }}
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {/* Load from File button */}
                   <button
                     onClick={handleLoadPersonalWorkFromFile}
-                    className="w-full text-left px-4 py-2.5 text-sm font-semibold bg-green-600 hover:bg-green-500 text-white transition-colors border-b border-gray-200 dark:border-gray-700"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
                   >
-                    📂 Load from File
+                    <FolderOpenIcon className="w-4 h-4 text-blue-400" />
+                    <span>파일에서 불러오기</span>
                   </button>
-
-                  {/* Save Current Model button */}
                   <button
                     onClick={handleSaveToPersonalWork}
-                    className="w-full text-left px-4 py-2.5 text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors border-b border-gray-200 dark:border-gray-700"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
                   >
-                    💾 Save Current Model
+                    <PlusIcon className="w-4 h-4 text-blue-400" />
+                    <span>현재 모델 저장</span>
                   </button>
-
-                  {/* Set as Initial Screen button */}
                   <button
                     onClick={handleSetAsInitial}
-                    className="w-full text-left px-4 py-2.5 text-sm font-semibold bg-yellow-600 hover:bg-yellow-500 text-white transition-colors border-b border-gray-200 dark:border-gray-700"
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
                   >
-                    ⭐ Set as Initial Screen
+                    <SparklesIcon className="w-4 h-4 text-yellow-400" />
+                    <span className="text-green-400">초기 화면으로 설정</span>
                   </button>
-
                   <div className="p-2 text-xs font-bold text-gray-500 dark:text-gray-500 uppercase border-b border-gray-200 dark:border-gray-700">
                     My Saved Models
                   </div>
                   <div className="max-h-64 overflow-y-auto">
                     {personalWork.length === 0 ? (
-                      <div className="px-4 py-2 text-sm text-gray-400 dark:text-gray-400 italic">
-                        No saved models
-                      </div>
+                      <div className="px-4 py-2 text-sm text-gray-400 last:rounded-b-md">저장된 모델이 없습니다</div>
                     ) : (
                       personalWork.map((work, idx) => (
                         <div
@@ -4829,7 +4895,7 @@ const App: React.FC = () => {
                         >
                           <button
                             onClick={() => handleLoadSample(work)}
-                            className="flex-1 text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:text-gray-900 dark:hover:text-white transition-colors"
+                            className="flex-1 text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors last:rounded-b-md"
                           >
                             {work.name}
                           </button>
@@ -4838,7 +4904,7 @@ const App: React.FC = () => {
                               e.stopPropagation();
                               handleDeletePersonalWork(work.name, idx);
                             }}
-                            className="px-3 py-2 text-gray-400 dark:text-gray-400 hover:text-red-400 dark:hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100"
+                            className="px-3 py-2 text-gray-400 hover:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors opacity-0 group-hover:opacity-100"
                             title={`Delete "${work.name}"`}
                           >
                             <XMarkIcon className="h-4 w-4" />
@@ -4851,87 +4917,13 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* 테마 전환 버튼 */}
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
-              title={
-                theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"
-              }
-            >
-              {theme === "dark" ? (
-                <SunIcon className="h-5 w-5 text-yellow-400" />
-              ) : (
-                <MoonIcon className="h-5 w-5 text-gray-700" />
-              )}
-            </button>
-            <button
-              onClick={undo}
-              disabled={!canUndo}
-              className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-              title="Undo (Ctrl+Z)"
-            >
-              <ArrowUturnLeftIcon className="h-5 w-5" />
-            </button>
-            <button
-              onClick={redo}
-              disabled={!canRedo}
-              className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md disabled:text-gray-400 dark:disabled:text-gray-600 disabled:cursor-not-allowed transition-colors flex-shrink-0"
-              title="Redo (Ctrl+Y)"
-            >
-              <ArrowUturnRightIcon className="h-5 w-5" />
-            </button>
-            <div className="h-5 border-l border-gray-700"></div>
-
-            <button
-              onClick={handleSetFolder}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-md font-semibold transition-colors"
-              title="Set Save Folder"
-            >
-              <FolderOpenIcon className="h-4 w-4" />
-              Set Folder
-            </button>
-            <button
-              onClick={handleLoadPipeline}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-md font-semibold transition-colors"
-              title="Load Pipeline"
-            >
-              <FolderOpenIcon className="h-4 w-4" />
-              Load
-            </button>
-            <button
-              onClick={handleSavePipeline}
-              disabled={!isDirty}
-              className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors text-white dark:text-white ${
-                !isDirty
-                  ? "bg-gray-400 dark:bg-gray-600 cursor-not-allowed opacity-50"
-                  : "bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600"
-              }`}
-              title="Save Pipeline"
-            >
-              {saveButtonText === "Save" ? (
-                <CodeBracketIcon className="h-4 w-4" />
-              ) : (
-                <CheckIcon className="h-4 w-4" />
-              )}
-              {saveButtonText}
-            </button>
-            <button
-              onClick={() => runSimulation()}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 rounded-md font-bold text-white transition-colors"
-            >
-              <PlayIcon className="h-4 w-4" />
-              Run All
-            </button>
-
+          <div className="flex items-center gap-1 md:gap-2 ml-auto">
             <button
               onClick={() => setIsCodePanelVisible((prev) => !prev)}
-              className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
+              className="p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
               title="Toggle Code & Terminal Panel"
             >
-              <CommandLineIcon className="h-5 w-5" />
+              <CommandLineIcon className="h-4 w-4 md:h-5 md:w-5" />
             </button>
           </div>
         </div>
