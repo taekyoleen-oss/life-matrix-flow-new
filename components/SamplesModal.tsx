@@ -1,34 +1,48 @@
 import React from "react";
-import { XMarkIcon, Cog6ToothIcon } from "@heroicons/react/24/outline";
+import { XMarkIcon, PlusCircleIcon, PencilIcon } from "@heroicons/react/24/outline";
+import {
+  isSupabaseConfigured,
+  createSampleModel,
+  createSampleInputData,
+  createAutoflowSample,
+  updateSampleModel,
+  updateAutoflowSample,
+} from "../utils/supabase-samples";
 
 interface Sample {
-  id?: number; // DB에서 로드할 때 사용
+  id?: number | string; // DB(Supabase uuid 또는 로컬 id)에서 로드할 때 사용
+  modelId?: string;
   filename: string;
   name: string;
   data: any;
   inputData?: string;
   description?: string;
   category?: string;
+  appSection?: string;
+  developerEmail?: string;
 }
 
 interface SamplesModalProps {
   isOpen: boolean;
   onClose: () => void;
   samples: Array<{
-    id?: number;
+    id?: number | string;
+    modelId?: string;
     filename: string;
     name: string;
     data: any;
     inputData?: string;
     description?: string;
     category?: string;
+    appSection?: string;
+    developerEmail?: string;
   }>;
   onLoadSample: (
     sampleName: string,
     filename: string,
-    sampleId?: number
+    sampleId?: number | string
   ) => void;
-  onManage?: () => void;
+  onRefresh?: () => void;
   isLoading?: boolean;
 }
 
@@ -37,25 +51,170 @@ const CATEGORIES = [
   "종신보험",
   "건강보험",
   "상해보험",
-  "운전자보험",
-  "기타",
+  "운전자",
+  "생명기타",
 ] as const;
+
+type TabType = "list" | "register";
 
 const SamplesModal: React.FC<SamplesModalProps> = ({
   isOpen,
   onClose,
   samples,
   onLoadSample,
-  onManage,
+  onRefresh,
   isLoading = false,
 }) => {
   const [selectedCategory, setSelectedCategory] =
     React.useState<string>("전체");
+  const [tab, setTab] = React.useState<TabType>("list");
+  const [registering, setRegistering] = React.useState(false);
+  const [registerError, setRegisterError] = React.useState<string | null>(null);
+  const [registerForm, setRegisterForm] = React.useState({
+    modelName: "",
+    modelFile: null as File | null,
+    inputDataName: "",
+    inputDataFile: null as File | null,
+    app_section: "LIFE",
+    category: "종신보험",
+    developer_email: "",
+    description: "",
+  });
+  const [editingSample, setEditingSample] = React.useState<Sample | null>(null);
+  const [editForm, setEditForm] = React.useState({
+    name: "",
+    category: "종신보험",
+    description: "",
+    developer_email: "",
+  });
+  const [editSaving, setEditSaving] = React.useState(false);
+
+  // Samples 닫을 때 등록 탭·편집 초기화
+  React.useEffect(() => {
+    if (!isOpen) {
+      setTab("list");
+      setEditingSample(null);
+    }
+  }, [isOpen]);
+
+  const handleEditOpen = (sample: Sample) => {
+    setEditingSample(sample);
+    setEditForm({
+      name: sample.name,
+      category: sample.category || "종신보험",
+      description: sample.description || "",
+      developer_email: sample.developerEmail || "",
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editingSample || !editingSample.id || !(editingSample as Sample & { modelId?: string }).modelId) return;
+    const modelId = (editingSample as Sample & { modelId?: string }).modelId;
+    setEditSaving(true);
+    try {
+      await updateSampleModel(modelId, { name: editForm.name.trim() });
+      await updateAutoflowSample(String(editingSample.id), {
+        category: editForm.category || null,
+        description: editForm.description.trim() || null,
+        developer_email: editForm.developer_email.trim() || null,
+      });
+      setEditingSample(null);
+      onRefresh?.();
+    } catch (e) {
+      console.error("Edit sample failed:", e);
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   if (!isOpen) return null;
 
+  const handleClose = () => {
+    setTab("list");
+    onClose();
+  };
+
   const handleLoad = (sample: Sample) => {
     onLoadSample(sample.name, sample.filename, sample.id);
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isSupabaseConfigured()) {
+      setRegisterError("Supabase가 설정되지 않았습니다. .env를 확인하세요.");
+      return;
+    }
+    if (!registerForm.modelName.trim()) {
+      setRegisterError("모델명을 입력하세요.");
+      return;
+    }
+    if (!registerForm.modelFile) {
+      setRegisterError("모델 파일(.lifx 또는 .json)을 선택하세요.");
+      return;
+    }
+    setRegisterError(null);
+    setRegistering(true);
+    try {
+      const modelText = await registerForm.modelFile.text();
+      let modelData: { modules?: unknown[]; connections?: unknown[] };
+      try {
+        modelData = JSON.parse(modelText);
+      } catch {
+        setRegisterError("모델 파일이 올바른 JSON이 아닙니다.");
+        setRegistering(false);
+        return;
+      }
+      const modules = Array.isArray(modelData.modules) ? modelData.modules : [];
+      const connections = Array.isArray(modelData.connections) ? modelData.connections : [];
+      const modelResult = await createSampleModel(registerForm.modelName.trim(), {
+        modules,
+        connections,
+      });
+      if (!modelResult) {
+        setRegisterError("모델 등록에 실패했습니다.");
+        setRegistering(false);
+        return;
+      }
+      let inputDataId: string | null = null;
+      if (registerForm.inputDataFile && registerForm.inputDataName.trim()) {
+        const content = await registerForm.inputDataFile.text();
+        const inputResult = await createSampleInputData(
+          registerForm.inputDataName.trim(),
+          content
+        );
+        if (inputResult) inputDataId = inputResult.id;
+      }
+      const sampleResult = await createAutoflowSample({
+        app_section: "LIFE",
+        category: registerForm.category || null,
+        developer_email: registerForm.developer_email.trim() || null,
+        model_id: modelResult.id,
+        input_data_id: inputDataId,
+        description: registerForm.description.trim() || null,
+      });
+      if (!sampleResult) {
+        setRegisterError("샘플 등록에 실패했습니다.");
+        setRegistering(false);
+        return;
+      }
+      setRegisterForm({
+        modelName: "",
+        modelFile: null,
+        inputDataName: "",
+        inputDataFile: null,
+        app_section: "LIFE",
+        category: "종신보험",
+        developer_email: "",
+        description: "",
+      });
+      setTab("list");
+      onRefresh?.();
+      alert("샘플이 등록되었습니다.");
+    } catch (err: any) {
+      setRegisterError(err?.message || "등록 중 오류가 발생했습니다.");
+    } finally {
+      setRegistering(false);
+    }
   };
 
   // 카테고리별 필터링
@@ -67,7 +226,7 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
   return (
     <div
       className="fixed inset-0 bg-black bg-opacity-70 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="bg-white dark:bg-gray-900 rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
@@ -80,17 +239,22 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
               Samples
             </h2>
             <div className="flex items-center gap-2">
-              {onManage && (
+              {isSupabaseConfigured() && (
                 <button
-                  onClick={onManage}
-                  className="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
-                  title="샘플 관리"
+                  onClick={() => { setTab(tab === "list" ? "register" : "list"); setRegisterError(null); }}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    tab === "register"
+                      ? "bg-purple-600 text-white"
+                      : "bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                  }`}
+                  title="샘플 등록"
                 >
-                  <Cog6ToothIcon className="w-5 h-5" />
+                  <PlusCircleIcon className="w-5 h-5" />
+                  {tab === "list" ? "데이터 입력" : "목록 보기"}
                 </button>
               )}
               <button
-                onClick={onClose}
+                onClick={handleClose}
                 className="text-gray-400 hover:text-white transition-colors p-1 rounded-md hover:bg-gray-800"
                 aria-label="Close"
               >
@@ -99,25 +263,135 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
             </div>
           </div>
 
-          {/* 카테고리 필터 */}
-          <div className="px-4 pb-4 flex gap-2 overflow-x-auto">
-            {CATEGORIES.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`px-4 py-2 rounded-md text-sm font-semibold whitespace-nowrap transition-colors ${
-                  selectedCategory === category
-                    ? "bg-purple-600 text-white"
-                    : "bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
-                }`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
+          {tab === "list" && (
+            <div className="px-4 pb-4 flex gap-2 overflow-x-auto">
+              {CATEGORIES.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setSelectedCategory(category)}
+                  className={`px-4 py-2 rounded-md text-sm font-semibold whitespace-nowrap transition-colors ${
+                    selectedCategory === category
+                      ? "bg-purple-600 text-white"
+                      : "bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-700"
+                  }`}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* 카드 그리드 */}
+        {/* 샘플 등록 폼 (데이터 입력) */}
+        {tab === "register" && (
+          <div className="flex-1 overflow-y-auto p-6">
+            {!isSupabaseConfigured() ? (
+              <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+                Supabase를 설정하면 샘플 등록이 가능합니다.
+              </p>
+            ) : (
+              <form onSubmit={handleRegisterSubmit} className="max-w-2xl mx-auto space-y-4">
+                {registerError && (
+                  <div className="p-3 rounded-md bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">
+                    {registerError}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">모델명 *</label>
+                  <input
+                    type="text"
+                    value={registerForm.modelName}
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, modelName: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                    placeholder="예: Whole Life"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">모델 파일 (.lifx, .json) *</label>
+                  <input
+                    type="file"
+                    accept=".lifx,.json"
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, modelFile: e.target.files?.[0] ?? null }))}
+                    className="w-full text-sm text-gray-600 dark:text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-purple-600 file:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">입력 데이터 이름 (선택)</label>
+                  <input
+                    type="text"
+                    value={registerForm.inputDataName}
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, inputDataName: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                    placeholder="예: Risk_Rates_Whole"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">입력 데이터 파일 (.csv, .txt) (선택)</label>
+                  <input
+                    type="file"
+                    accept=".csv,.txt"
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, inputDataFile: e.target.files?.[0] ?? null }))}
+                    className="w-full text-sm text-gray-600 dark:text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-purple-600 file:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">카테고리</label>
+                  <select
+                    value={registerForm.category}
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, category: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                  >
+                    <option value="종신보험">종신보험</option>
+                    <option value="건강보험">건강보험</option>
+                    <option value="상해보험">상해보험</option>
+                    <option value="운전자">운전자</option>
+                    <option value="생명기타">생명기타</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">개발자 이메일</label>
+                  <input
+                    type="email"
+                    value={registerForm.developer_email}
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, developer_email: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                    placeholder="developer@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">모델 설명</label>
+                  <textarea
+                    value={registerForm.description}
+                    onChange={(e) => setRegisterForm((f) => ({ ...f, description: e.target.value }))}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                    rows={3}
+                    placeholder="모델에 대한 설명을 입력하세요"
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setTab("list")}
+                    className="px-4 py-2 rounded-md bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={registering}
+                    className="px-6 py-2 rounded-md bg-purple-600 text-white font-medium hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    {registering ? "등록 중..." : "DB 등록"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+
+        {/* 카드 그리드 (목록) */}
+        {tab === "list" && (
         <div className="flex-1 overflow-y-auto p-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -136,23 +410,43 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
               {filteredSamples.map((sample) => (
                 <div
                   key={sample.filename}
-                  className="bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-700 p-6 hover:border-purple-500 transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 flex flex-col"
+                  className="bg-gray-100 dark:bg-gray-800 rounded-lg border border-gray-300 dark:border-gray-700 p-6 hover:border-purple-500 transition-all duration-200 hover:shadow-lg hover:shadow-purple-500/20 flex flex-col relative"
                 >
+                  {isSupabaseConfigured() && sample.id && (sample as Sample & { modelId?: string }).modelId && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleEditOpen(sample); }}
+                      className="absolute top-3 right-3 p-1.5 rounded-md text-gray-500 hover:text-purple-600 hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors"
+                      title="편집"
+                    >
+                      <PencilIcon className="w-5 h-5" />
+                    </button>
+                  )}
                   {/* 카드 헤더 */}
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 truncate">
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 truncate pr-8">
                     {sample.name}
                   </h3>
 
-                  {/* 모델 정보 */}
+                  {/* 모델 정보 (대구분은 LIFE로 고정, 표시하지 않음) */}
                   <div className="space-y-3 mb-4 flex-1">
                     <div>
                       <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
                         카테고리:{" "}
                       </span>
                       <span className="text-gray-900 dark:text-white text-sm">
-                        {sample.category || "기타"}
+                        {sample.category || "생명기타"}
                       </span>
                     </div>
+                    {sample.developerEmail && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
+                          개발자:{" "}
+                        </span>
+                        <span className="text-gray-900 dark:text-white text-sm truncate">
+                          {sample.developerEmail}
+                        </span>
+                      </div>
+                    )}
                     <div>
                       <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
                         모델:{" "}
@@ -191,6 +485,76 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
             </div>
           )}
         </div>
+        )}
+
+        {/* 샘플 편집 모달 */}
+        {editingSample && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingSample(null)}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">샘플 편집</h3>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">이름</label>
+                <input
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                  placeholder="모델명"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">카테고리</label>
+                <select
+                  value={editForm.category}
+                  onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                >
+                  <option value="종신보험">종신보험</option>
+                  <option value="건강보험">건강보험</option>
+                  <option value="상해보험">상해보험</option>
+                  <option value="운전자">운전자</option>
+                  <option value="생명기타">생명기타</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">설명</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm((f) => ({ ...f, description: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                  rows={3}
+                  placeholder="모델 설명"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">개발자 이메일</label>
+                <input
+                  type="email"
+                  value={editForm.developer_email}
+                  onChange={(e) => setEditForm((f) => ({ ...f, developer_email: e.target.value }))}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white"
+                  placeholder="developer@example.com"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingSample(null)}
+                  className="flex-1 px-4 py-2 rounded-md bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleEditSave}
+                  disabled={editSaving}
+                  className="flex-1 px-4 py-2 rounded-md bg-purple-600 text-white font-medium hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {editSaving ? "저장 중..." : "저장"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

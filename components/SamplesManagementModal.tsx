@@ -5,7 +5,30 @@ import {
   TrashIcon,
   ArrowUpTrayIcon,
 } from "@heroicons/react/24/outline";
-import { samplesApi, Sample } from "../utils/samples-api";
+import {
+  isSupabaseConfigured,
+  fetchAutoflowSamplesList,
+  updateAutoflowSample,
+  deleteAutoflowSample,
+  createSampleModel,
+  createAutoflowSample,
+} from "../utils/supabase-samples";
+
+/** 샘플 관리용 타입 (Supabase autoflow_samples 기준) */
+type ManagementSample = {
+  id: string;
+  filename: string;
+  name: string;
+  input_data?: string;
+  description?: string;
+  category?: string;
+  created_at?: string;
+  updated_at?: string;
+  app_section?: string;
+  developer_email?: string;
+  model_name?: string;
+  input_data_name?: string | null;
+};
 
 interface Props {
   isOpen: boolean;
@@ -18,14 +41,16 @@ export const SamplesManagementModal: React.FC<Props> = ({
   onClose,
   onRefresh,
 }) => {
-  const [samples, setSamples] = useState<Sample[]>([]);
-  const [editing, setEditing] = useState<Sample | null>(null);
+  const [samples, setSamples] = useState<ManagementSample[]>([]);
+  const [editing, setEditing] = useState<ManagementSample | null>(null);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     input_data: "",
     description: "",
-    category: "기타",
+    category: "생명기타",
+    app_section: "LIFE",
+    developer_email: "",
   });
 
   useEffect(() => {
@@ -37,51 +62,40 @@ export const SamplesManagementModal: React.FC<Props> = ({
   const loadSamples = async () => {
     setLoading(true);
     try {
-      const data = await samplesApi.getAll();
-      setSamples(data);
+      if (!isSupabaseConfigured()) {
+        setSamples([]);
+        return;
+      }
+      const list = await fetchAutoflowSamplesList();
+      const mapped: ManagementSample[] = list.map((s) => ({
+        id: s.id,
+        filename: s.model_name,
+        name: s.model_name,
+        input_data: s.input_data_name ?? undefined,
+        description: s.description ?? undefined,
+        category: s.category ?? "생명기타",
+        created_at: s.created_at,
+        updated_at: s.updated_at,
+        app_section: s.app_section,
+        developer_email: s.developer_email ?? undefined,
+        model_name: s.model_name,
+        input_data_name: s.input_data_name,
+      }));
+      setSamples(mapped);
     } catch (error: any) {
       console.error("Failed to load samples:", error);
-      
-      let errorMessage = "샘플 목록을 불러오는데 실패했습니다.";
-      let solutionMessage = "";
-      
-      // 서버 연결 오류
-      if (error.message && (error.message.includes("404") || error.message.includes("fetch"))) {
-        errorMessage = "샘플 관리 서버에 연결할 수 없습니다.";
-        solutionMessage = 
-          "서버를 시작하려면 터미널에서 다음 명령어를 실행하세요:\n\n" +
-          "pnpm dev\n\n" +
-          "또는 서버만 실행:\n" +
-          "pnpm run server";
-      }
-      // better-sqlite3 빌드 오류
-      else if (error.message && error.message.includes("503")) {
-        errorMessage = "Samples API를 사용할 수 없습니다.";
-        solutionMessage = 
-          "better-sqlite3 모듈이 빌드되지 않았습니다.\n\n" +
-          "해결 방법:\n" +
-          "1. 터미널에서 실행: pnpm approve-builds better-sqlite3\n" +
-          "   (대화형 메뉴에서 better-sqlite3 선택 후 Enter)\n\n" +
-          "2. 그 다음: pnpm install better-sqlite3 --force\n\n" +
-          "3. Visual Studio Build Tools가 필요할 수 있습니다.";
-      }
-      // 기타 오류
-      else {
-        solutionMessage = "오류: " + error.message;
-      }
-      
-      alert(errorMessage + "\n\n" + solutionMessage);
       setSamples([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
+    if (!isSupabaseConfigured()) return;
     if (!confirm("정말 이 샘플을 삭제하시겠습니까?")) return;
-
     try {
-      await samplesApi.delete(id);
+      const ok = await deleteAutoflowSample(id);
+      if (!ok) throw new Error("삭제 실패");
       await loadSamples();
       onRefresh();
       alert("삭제되었습니다.");
@@ -90,47 +104,41 @@ export const SamplesManagementModal: React.FC<Props> = ({
     }
   };
 
-  const handleEdit = (sample: Sample) => {
+  const handleEdit = (sample: ManagementSample) => {
     setEditing(sample);
     setFormData({
       name: sample.name,
-      input_data: sample.input_data || "",
+      input_data: (sample.input_data ?? sample.input_data_name) ?? "",
       description: sample.description || "",
-      category: sample.category || "프라이싱",
+      category: sample.category || "생명기타",
+      app_section: sample.app_section || "LIFE",
+      developer_email: sample.developer_email || "",
     });
   };
 
   const handleSave = async () => {
-    if (!editing || !editing.id) {
-      console.error("handleSave: No editing sample or ID");
-      return;
-    }
-
-    // 필수 필드 검증
-    if (!formData.name || formData.name.trim() === "") {
+    if (!editing || !editing.id || !isSupabaseConfigured()) return;
+    if (!formData.name?.trim()) {
       alert("이름을 입력해주세요.");
       return;
     }
-
-    // 이름이 비어있으면 저장하지 않음
-    if (!formData.name.trim()) {
-      return;
-    }
-
     try {
       setLoading(true);
-      console.log("handleSave: Updating sample", {
-        id: editing.id,
-        formData: formData,
+      const ok = await updateAutoflowSample(editing.id, {
+        app_section: formData.app_section || "LIFE",
+        category: formData.category || "생명기타",
+        developer_email: formData.developer_email || null,
+        description: formData.description || null,
       });
-      const result = await samplesApi.update(editing.id, formData);
-      console.log("handleSave: Update successful", result);
+      if (!ok) throw new Error("수정 실패");
       setEditing(null);
       setFormData({
         name: "",
         input_data: "",
         description: "",
-        category: "기타",
+        category: "생명기타",
+        app_section: "LIFE",
+        developer_email: "",
       });
       await loadSamples();
       onRefresh();
@@ -147,15 +155,13 @@ export const SamplesManagementModal: React.FC<Props> = ({
     if (
       editing &&
       (formData.name !== (editing.name || "") ||
-        formData.input_data !== (editing.input_data || "") ||
+        formData.input_data !== (editing.input_data ?? editing.input_data_name ?? "") ||
         formData.description !== (editing.description || "") ||
-        formData.category !== (editing.category || "프라이싱"))
+        formData.category !== (editing.category || "생명기타") ||
+        formData.app_section !== (editing.app_section || "LIFE") ||
+        formData.developer_email !== (editing.developer_email || ""))
     ) {
-      if (
-        !confirm(
-          "변경사항이 있습니다. 정말 취소하시겠습니까? 변경사항은 저장되지 않습니다."
-        )
-      ) {
+      if (!confirm("변경사항이 있습니다. 정말 취소하시겠습니까? 변경사항은 저장되지 않습니다.")) {
         return;
       }
     }
@@ -164,26 +170,49 @@ export const SamplesManagementModal: React.FC<Props> = ({
       name: "",
       input_data: "",
       description: "",
-      category: "기타",
+      category: "생명기타",
+      app_section: "LIFE",
+      developer_email: "",
     });
   };
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
+    if (!isSupabaseConfigured()) {
+      alert("Supabase를 설정하면 파일에서 가져오기를 사용할 수 있습니다.");
+      e.target.value = "";
+      return;
+    }
     if (!file.name.endsWith(".lifx") && !file.name.endsWith(".json")) {
       alert("지원하는 파일 형식은 .lifx 또는 .json입니다.");
       return;
     }
-
     try {
       setLoading(true);
-      await samplesApi.importFromFile(file);
+      const text = await file.text();
+      let data: { name?: string; modules?: unknown[]; connections?: unknown[] };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        alert("유효한 JSON 파일이 아닙니다.");
+        return;
+      }
+      const name = data.name || data.projectName || file.name.replace(/\.(lifx|json)$/i, "");
+      const modules = Array.isArray(data.modules) ? data.modules : [];
+      const connections = Array.isArray(data.connections) ? data.connections : [];
+      const modelResult = await createSampleModel(name, { modules, connections });
+      if (!modelResult) throw new Error("모델 생성 실패");
+      const sampleResult = await createAutoflowSample({
+        app_section: "LIFE",
+        category: "생명기타",
+        model_id: modelResult.id,
+        description: "",
+      });
+      if (!sampleResult) throw new Error("샘플 등록 실패");
       await loadSamples();
       onRefresh();
       alert("파일이 성공적으로 가져와졌습니다.");
-      // 파일 입력 초기화
       e.target.value = "";
     } catch (error: any) {
       alert("가져오기 실패: " + error.message);
@@ -218,13 +247,13 @@ export const SamplesManagementModal: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* 파일 가져오기 */}
+        {/* 파일 가져오기 (Supabase 설정 시에만 사용 가능) */}
         <div className="p-4 border-b border-gray-300 dark:border-gray-700 flex-shrink-0">
           <label className="block mb-2 text-sm font-medium text-gray-700 dark:text-gray-300">
             파일에서 가져오기 (.lifx, .json)
           </label>
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-md cursor-pointer transition-colors">
+            <label className={`flex items-center gap-2 px-4 py-2 rounded-md transition-colors ${isSupabaseConfigured() ? "bg-purple-600 hover:bg-purple-700 text-white cursor-pointer" : "bg-gray-400 dark:bg-gray-600 text-gray-200 cursor-not-allowed"}`}>
               <ArrowUpTrayIcon className="w-5 h-5" />
               <span>파일 선택</span>
               <input
@@ -232,7 +261,7 @@ export const SamplesManagementModal: React.FC<Props> = ({
                 accept=".lifx,.json"
                 onChange={handleFileImport}
                 className="hidden"
-                disabled={loading}
+                disabled={loading || !isSupabaseConfigured()}
               />
             </label>
             {loading && (
@@ -257,10 +286,15 @@ export const SamplesManagementModal: React.FC<Props> = ({
               </div>
             </div>
           ) : samples.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex flex-col items-center justify-center py-12 gap-2">
               <div className="text-gray-600 dark:text-gray-400 text-lg">
-                샘플이 없습니다
+                {isSupabaseConfigured() ? "샘플이 없습니다" : "Supabase를 설정하면 샘플 관리가 가능합니다"}
               </div>
+              {!isSupabaseConfigured() && (
+                <p className="text-gray-500 dark:text-gray-500 text-sm max-w-md text-center">
+                  .env에 VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY를 설정하고, Supabase에 스키마를 적용하세요.
+                </p>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -271,7 +305,13 @@ export const SamplesManagementModal: React.FC<Props> = ({
                       이름
                     </th>
                     <th className="text-left p-3 text-gray-300 font-semibold">
+                      대구분
+                    </th>
+                    <th className="text-left p-3 text-gray-300 font-semibold">
                       카테고리
+                    </th>
+                    <th className="text-left p-3 text-gray-300 font-semibold">
+                      개발자
                     </th>
                     <th className="text-left p-3 text-gray-300 font-semibold">
                       입력 데이터
@@ -296,13 +336,19 @@ export const SamplesManagementModal: React.FC<Props> = ({
                       <td className="p-3 text-gray-900 dark:text-white font-medium">
                         {sample.name}
                       </td>
-                      <td className="p-3 text-gray-600 dark:text-gray-400">
-                        <span className="px-2 py-1 bg-purple-600/20 text-purple-300 rounded text-xs">
-                          {sample.category || "기타"}
-                        </span>
+                      <td className="p-3 text-gray-600 dark:text-gray-400 text-xs">
+                        {sample.app_section || "-"}
                       </td>
                       <td className="p-3 text-gray-600 dark:text-gray-400">
-                        {sample.input_data || "-"}
+                        <span className="px-2 py-1 bg-purple-600/20 text-purple-300 rounded text-xs">
+                          {sample.category || "생명기타"}
+                        </span>
+                      </td>
+                      <td className="p-3 text-gray-600 dark:text-gray-400 text-xs max-w-[120px] truncate">
+                        {sample.developer_email || "-"}
+                      </td>
+                      <td className="p-3 text-gray-600 dark:text-gray-400">
+                        {sample.input_data ?? sample.input_data_name ?? "-"}
                       </td>
                       <td className="p-3 text-gray-400 max-w-md truncate">
                         {sample.description || "-"}
@@ -324,7 +370,7 @@ export const SamplesManagementModal: React.FC<Props> = ({
                             <PencilIcon className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDelete(sample.id!)}
+                            onClick={() => handleDelete(sample.id)}
                             className="text-red-400 hover:text-red-300 transition-colors p-1 rounded"
                             title="삭제"
                           >
@@ -362,7 +408,7 @@ export const SamplesManagementModal: React.FC<Props> = ({
             <div className="space-y-3">
               <div>
                 <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
-                  이름
+                  이름 (모델명)
                 </label>
                 <input
                   type="text"
@@ -371,6 +417,38 @@ export const SamplesManagementModal: React.FC<Props> = ({
                     setFormData({ ...formData, name: e.target.value })
                   }
                   className="w-full px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded border border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:outline-none"
+                  readOnly
+                  placeholder="모델명은 별도 테이블에서 관리됩니다"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                  대구분
+                </label>
+                <select
+                  value={formData.app_section}
+                  onChange={(e) =>
+                    setFormData({ ...formData, app_section: e.target.value })
+                  }
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded border border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:outline-none"
+                >
+                  <option value="LIFE">LIFE</option>
+                  <option value="ML">ML</option>
+                  <option value="DFA">DFA</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
+                  개발자 (이메일)
+                </label>
+                <input
+                  type="email"
+                  value={formData.developer_email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, developer_email: e.target.value })
+                  }
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded border border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:outline-none"
+                  placeholder="developer@example.com"
                 />
               </div>
               <div>
@@ -385,6 +463,7 @@ export const SamplesManagementModal: React.FC<Props> = ({
                   }
                   className="w-full px-3 py-2 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded border border-gray-300 dark:border-gray-600 focus:border-purple-500 focus:outline-none"
                   placeholder="예: Risk Rates"
+                  readOnly
                 />
               </div>
               <div>
@@ -401,8 +480,8 @@ export const SamplesManagementModal: React.FC<Props> = ({
                   <option value="종신보험">종신보험</option>
                   <option value="건강보험">건강보험</option>
                   <option value="상해보험">상해보험</option>
-                  <option value="운전자보험">운전자보험</option>
-                  <option value="기타">기타</option>
+                  <option value="운전자">운전자</option>
+                  <option value="생명기타">생명기타</option>
                 </select>
               </div>
               <div>

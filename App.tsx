@@ -76,6 +76,11 @@ import {
   savePersonalWork,
   SampleData,
 } from "./utils/samples";
+import {
+  isSupabaseConfigured,
+  fetchAutoflowSamplesList,
+  fetchAutoflowSampleById,
+} from "./utils/supabase-samples";
 import { savePipeline, loadPipeline } from "./utils/fileOperations";
 import { loadModuleDefault } from "./utils/moduleDefaults";
 
@@ -539,7 +544,8 @@ const App: React.FC = () => {
   const [isSamplesManagementOpen, setIsSamplesManagementOpen] = useState(false);
   const [folderSamples, setFolderSamples] = useState<
     Array<{
-      id?: number;
+      id?: number | string;
+      modelId?: string;
       filename: string;
       name: string;
       data: any;
@@ -1084,104 +1090,40 @@ const App: React.FC = () => {
     };
   }, [productName, modules, connections]);
 
-  // Samples 폴더의 파일 목록 가져오기 (DB 또는 samples.json에서 로드)
+  // Samples 목록: Supabase(우선) → samples.json 폴백 (로컬 Samples API 미사용)
   const loadFolderSamplesLocal = useCallback(async () => {
     setIsLoadingSamples(true);
     try {
-      // 프로덕션 환경(Vercel)에서는 samples.json 사용, 개발 환경에서는 DB API 시도
-      const isProduction =
-        window.location.hostname !== "localhost" &&
-        window.location.hostname !== "127.0.0.1";
-
-      if (isProduction) {
-        // 프로덕션: samples.json 직접 사용
-        console.log("Production environment: Loading from samples.json");
-        const response = await fetch("/samples/samples.json");
-        if (response.ok) {
-          const samples = await response.json();
-          if (Array.isArray(samples) && samples.length > 0) {
-            console.log(`Loaded ${samples.length} samples from samples.json`);
-            setFolderSamples(samples);
-          } else {
-            setFolderSamples([]);
-          }
-        } else {
-          console.error("Failed to load samples.json:", response.status);
-          setFolderSamples([]);
+      if (isSupabaseConfigured()) {
+        const list = await fetchAutoflowSamplesList();
+        if (list.length > 0) {
+          console.log(`Loaded ${list.length} samples from Supabase (autoflow_samples)`);
+          setFolderSamples(
+            list.map((s) => ({
+              id: s.id,
+              modelId: s.model_id,
+              filename: s.model_name,
+              name: s.model_name,
+              inputData: s.input_data_name ?? undefined,
+              description: s.description ?? undefined,
+              category: s.category ?? "기타",
+              appSection: s.app_section,
+              developerEmail: s.developer_email ?? undefined,
+              data: null,
+            }))
+          );
+          return;
         }
-        return;
       }
 
-      // 개발 환경: DB API 시도
-      try {
-        const API_BASE =
-          import.meta.env.VITE_API_URL || "http://localhost:3002";
-        const response = await fetch(`${API_BASE}/api/samples`);
-
-        if (!response.ok) {
-          throw new Error(`DB API returned ${response.status}`);
-        }
-
+      const response = await fetch("/samples/samples.json");
+      if (response.ok) {
         const samples = await response.json();
-
         if (Array.isArray(samples) && samples.length > 0) {
-          console.log(
-            `Loaded ${samples.length} samples from DB:`,
-            samples.map((s: any) => s.name || s.filename)
-          );
-          // DB 형식을 앱 형식으로 변환
-          const formattedSamples = samples.map((s: any) => ({
-            id: s.id,
-            filename: s.filename,
-            name: s.name,
-            inputData: s.input_data,
-            description: s.description,
-            category: s.category || "기타",
-            data: null,
-          }));
-          setFolderSamples(formattedSamples);
-        } else {
-          console.log("No samples found in DB, falling back to samples.json");
-          throw new Error("No samples in DB");
-        }
-      } catch (dbError: any) {
-        // DB API 실패 시 samples.json으로 폴백
-        console.warn(
-          "DB API not available, falling back to samples.json:",
-          dbError.message
-        );
-        
-        // 503 에러인 경우 better-sqlite3 빌드 문제일 수 있음
-        if (dbError.message && dbError.message.includes("503")) {
-          console.warn(
-            "Samples API is not available. better-sqlite3 may need to be built."
-          );
-        }
-        
-        try {
-          const fallbackResponse = await fetch("/samples/samples.json");
-          if (fallbackResponse.ok) {
-            const samples = await fallbackResponse.json();
-            if (Array.isArray(samples) && samples.length > 0) {
-              console.log(
-                `Loaded ${samples.length} samples from samples.json (fallback)`
-              );
-              const formattedSamples = samples.map((s: any) => ({
-                ...s,
-                category: s.category || "기타",
-              }));
-              setFolderSamples(formattedSamples);
-            } else {
-              setFolderSamples([]);
-            }
-          } else {
-            setFolderSamples([]);
-          }
-        } catch (fallbackError) {
-          console.error("Failed to load samples.json:", fallbackError);
-          setFolderSamples([]);
-        }
-      }
+          console.log(`Loaded ${samples.length} samples from samples.json`);
+          setFolderSamples(samples.map((s: any) => ({ ...s, category: s.category || "기타" })));
+        } else setFolderSamples([]);
+      } else setFolderSamples([]);
     } catch (error: any) {
       console.error("Error loading samples:", error);
       setFolderSamples([]);
@@ -1205,7 +1147,7 @@ const App: React.FC = () => {
     async (
       sampleName: string,
       filename?: string,
-      sampleId?: number
+      sampleId?: number | string
     ) => {
       console.log(
         "handleLoadSample called with:",
@@ -1219,21 +1161,12 @@ const App: React.FC = () => {
         let sampleModel: any = null;
 
         if (sampleId) {
-          // DB에서 샘플 로드 (ID가 있는 경우)
-          try {
-            const API_BASE =
-              import.meta.env.VITE_API_URL || "http://localhost:3002";
-            const response = await fetch(`${API_BASE}/api/samples/${sampleId}`);
-            if (!response.ok) {
-              throw new Error(
-                `Failed to fetch sample from DB: ${response.status} ${response.statusText}`
-              );
-            }
-            const dbSample = await response.json();
-            sampleModel = dbSample.file_content; // file_content는 이미 JSON 파싱됨
-          } catch (error: any) {
-            console.error("Error loading sample from DB:", error);
-            alert(`Error loading sample from DB: ${error.message || error}`);
+          if (isSupabaseConfigured() && typeof sampleId === "string") {
+            const supabaseSample = await fetchAutoflowSampleById(sampleId);
+            if (supabaseSample) sampleModel = supabaseSample.file_content;
+          }
+          if (!sampleModel) {
+            alert("샘플을 불러올 수 없습니다. Supabase가 설정되어 있는지 확인하세요.");
             return;
           }
         } else if (filename) {
@@ -5585,10 +5518,7 @@ const App: React.FC = () => {
         onClose={() => setIsSampleMenuOpen(false)}
         samples={folderSamples}
         onLoadSample={handleLoadSample}
-        onManage={() => {
-          setIsSampleMenuOpen(false);
-          setIsSamplesManagementOpen(true);
-        }}
+        onRefresh={loadFolderSamplesLocal}
         isLoading={isLoadingSamples}
       />
 

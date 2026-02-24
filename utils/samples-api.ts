@@ -1,5 +1,8 @@
 /**
- * 샘플 관리 API 클라이언트
+ * 샘플 관리 API 클라이언트 (로컬 Express + SQLite)
+ *
+ * @deprecated 샘플은 Supabase(autoflow_samples)를 사용합니다.
+ * 프론트에서는 더 이상 사용하지 않으며, 서버 코드와 함께 레거시로만 유지됩니다.
  */
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3002";

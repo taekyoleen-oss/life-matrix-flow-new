@@ -19,78 +19,17 @@ export interface PipelineState {
 }
 
 /**
- * Save pipeline state to a file using File System Access API
+ * Save pipeline state to a file — 항상 로컬 다운로드로 저장 (브라우저 다운로드 폴더)
  */
 export async function savePipeline(
   state: PipelineState,
   options: SavePipelineOptions
 ): Promise<void> {
   try {
-    if (!("showSaveFilePicker" in window)) {
-      // Fallback for browsers that don't support File System Access API
-      // Use productName if available in state, otherwise use default name
-      const fileName = state.productName 
-        ? `${state.productName}${options.extension}`
-        : `pipeline${options.extension}`;
-      
-      const blob = new Blob([JSON.stringify(state, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      options.onSuccess?.(fileName);
-      return;
-    }
-
-    // Use productName if available in state, otherwise use default name
-    const fileName = state.productName 
-      ? `${state.productName}${options.extension}`
-      : `pipeline${options.extension}`;
-    
-    try {
-      const fileHandle = await (window as any).showSaveFilePicker({
-        suggestedName: fileName,
-        types: [
-          {
-            description: options.description,
-            accept: {
-              "application/json": [options.extension],
-            },
-          },
-        ],
-      });
-
-      // Try to use File System Access API
-      try {
-        const writable = await fileHandle.createWritable();
-        await writable.write(JSON.stringify(state, null, 2));
-        await writable.close();
-        options.onSuccess?.(fileHandle.name);
-        return;
-      } catch (writeError: any) {
-        // If createWritable fails (e.g., permission denied, insecure context),
-        // fall back to download method
-        console.warn("File System Access API write failed, falling back to download:", writeError);
-        // Fall through to download fallback
-      }
-    } catch (pickerError: any) {
-      // If showSaveFilePicker fails, fall back to download method
-      if (pickerError.name !== "AbortError") {
-        console.warn("File System Access API picker failed, falling back to download:", pickerError);
-        // Fall through to download fallback
-      } else {
-        // User cancelled, don't show error
-        return;
-      }
-    }
-
-    // Fallback to download method if File System Access API fails
+    const fileName =
+      (state.productName && state.productName.trim()
+        ? state.productName.trim()
+        : "pipeline") + options.extension;
     const blob = new Blob([JSON.stringify(state, null, 2)], {
       type: "application/json",
     });
@@ -104,11 +43,9 @@ export async function savePipeline(
     URL.revokeObjectURL(url);
     options.onSuccess?.(fileName);
   } catch (error: any) {
-    if (error.name !== "AbortError") {
-      const err = error instanceof Error ? error : new Error(String(error));
-      options.onError?.(err);
-      throw err;
-    }
+    const err = error instanceof Error ? error : new Error(String(error));
+    options.onError?.(err);
+    throw err;
   }
 }
 
