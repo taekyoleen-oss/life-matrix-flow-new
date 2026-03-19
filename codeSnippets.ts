@@ -115,10 +115,20 @@ print(df_risk[['i_prem', 'i_claim']].head())`;
       surCode += `initial_lx = 100000\n\n`;
 
       surCalcs.forEach((c: any) => {
+        const lxColName = c.name ? `lx_${c.name}` : 'lx';
+        const dxColName = c.name ? `Dx_${c.name}` : 'Dx';
+
+        // ── 고정값 lx
+        if (c.fixedValue !== undefined) {
+          surCode += `# Fixed lx column: ${lxColName} = ${c.fixedValue}\n`;
+          surCode += `df['${lxColName}'] = ${c.fixedValue}\n`;
+          surCode += `df['${dxColName}'] = df['${lxColName}'] * df['i_prem']\n\n`;
+          return;
+        }
+
+        // ── 감소율 lx
         surCode += `# Calculation: ${c.name}\n`;
         surCode += `current_lx = initial_lx\n`;
-        surCode += `lx_col = 'lx_${c.name}'\n`;
-        surCode += `dx_col = 'Dx_${c.name}'\n`;
         surCode += `lx_values = []\n`;
 
         surCode += `for index, row in df.iterrows():\n`;
@@ -144,8 +154,8 @@ print(df_risk[['i_prem', 'i_claim']].head())`;
         }
         surCode += `    current_lx -= deaths\n`;
 
-        surCode += `df[lx_col] = lx_values\n`;
-        surCode += `df[dx_col] = df[lx_col] * df['i_prem']\n\n`;
+        surCode += `df['${lxColName}'] = lx_values\n`;
+        surCode += `df['${dxColName}'] = df['${lxColName}'] * df['i_prem']\n\n`;
       });
       return surCode;
 
@@ -232,25 +242,40 @@ print(f"Formula: {formula}")
       const formula2 = parameters.formulaForGreaterThanPaymentTerm || "";
       let reserveCode = `# Reserve Calculator\n`;
       reserveCode += `reserve_col = "${reserveColName}"\n`;
-      reserveCode += `payment_term = int(policy_info['payment_term'])\n\n`;
+      reserveCode += `payment_term = int(policy_info['payment_term'])\n`;
+      reserveCode += `n_idx = len(df) - 1  # 마지막 행 인덱스\n`;
+      reserveCode += `m_idx = payment_term - 1  # 납입기간 마지막 행\n\n`;
+
+      // ColName[t] → df.at[idx, 'ColName'] 등으로 변환
+      // 구형 [ColName][t] 도 함께 처리
+      const convertReserveFormula = (f: string) =>
+        f
+          // 구형: [ColName][idx] → ColName[idx] (먼저 외부 브래킷 제거)
+          .replace(/\[([A-Za-z_][A-Za-z0-9_]*)\]\[/g, '$1[')
+          // 구형: 나머지 [ColName] → ColName
+          .replace(/(?<![}\])\w])\[([A-Za-z_][A-Za-z0-9_]*)\]/g, '$1')
+          // ColName[t] → df.at[idx, 'ColName']
+          .replace(/(\w+)\[t\]/g, "df.at[idx, '$1']")
+          // ColName[n] → df.at[n_idx, 'ColName']
+          .replace(/(\w+)\[n\]/g, "df.at[n_idx, '$1']")
+          // ColName[m] → df.at[m_idx, 'ColName']
+          .replace(/(\w+)\[m\]/g, "df.at[m_idx, '$1']")
+          // ColName[0] → df['ColName'].iloc[0]
+          .replace(/(\w+)\[0\]/g, "df['$1'].iloc[0]");
 
       if (formula1) {
-        let pyFormula1 = formula1.replace(/\[([^\]]+)\]/g, "df['$1']");
-        reserveCode += `# Formula for Payment Term <= m (row index <= payment_term - 1)\n`;
+        const pyFormula1 = convertReserveFormula(formula1);
+        reserveCode += `# 납입 중 준비금 (t <= m)\n`;
         reserveCode += `formula1 = "${formula1}"\n`;
         reserveCode += `for idx in range(min(payment_term, len(df))):\n`;
-        reserveCode += `    # Apply formula1 to rows 0 to payment_term-1\n`;
-        reserveCode += `    # Replace [Variables] with actual values\n`;
         reserveCode += `    df.loc[idx, reserve_col] = ${pyFormula1}\n\n`;
       }
 
       if (formula2) {
-        let pyFormula2 = formula2.replace(/\[([^\]]+)\]/g, "df['$1']");
-        reserveCode += `# Formula for Payment Term > m (row index > payment_term - 1)\n`;
+        const pyFormula2 = convertReserveFormula(formula2);
+        reserveCode += `# 납입 후 준비금 (t > m)\n`;
         reserveCode += `formula2 = "${formula2}"\n`;
         reserveCode += `for idx in range(payment_term, len(df)):\n`;
-        reserveCode += `    # Apply formula2 to rows payment_term onwards\n`;
-        reserveCode += `    # Replace [Variables] with actual values\n`;
         reserveCode += `    df.loc[idx, reserve_col] = ${pyFormula2}\n`;
       }
 

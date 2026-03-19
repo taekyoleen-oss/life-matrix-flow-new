@@ -55,31 +55,31 @@ export const MinusIcon: React.FC<IconProps> = ({ className = '', width = 24, hei
   </svg>
 );
 
-// Arrow Uturn Left Icon
+// Arrow Uturn Left Icon (Undo) — Heroicons outline
 export const ArrowUturnLeftIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
-  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M3 9v6h6M3 9l6-6M21 9v6a2 2 0 0 1-2 2H9" />
+  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3" />
   </svg>
 );
 
-// Arrow Uturn Right Icon
+// Arrow Uturn Right Icon (Redo) — Heroicons outline
 export const ArrowUturnRightIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
-  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M21 9v6h-6M21 9l-6-6M3 9v6a2 2 0 0 0 2 2h12" />
+  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m15 15 6-6m0 0-6-6m6 6H9a6 6 0 0 0 0 12h3" />
   </svg>
 );
 
-// Arrows Pointing Out Icon
+// Arrows Pointing Out Icon (Fit to View) — Heroicons outline 24x24
 export const ArrowsPointingOutIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
   <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.25 9.75l3.75-3.75m0 0h-3m3 3v-3m-4.5 12.75l3.75 3.75m0 0h-3m3-3v3m-12.75-4.5l-3.75 3.75m0 0v-3m0 3h3m12.75-12.75l-3.75-3.75m0 0v3m0-3h3" />
+    <path d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
   </svg>
 );
 
-// Arrows Pointing In Icon
+// Arrows Pointing In Icon — Heroicons outline 24x24
 export const ArrowsPointingInIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
-  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 15v5m0 0h5m-5-5l5-5m16 5v5m0 0h-5m5-5l-5-5M4 4l5 5m11 0l5-5m-5 5h5" />
+  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
   </svg>
 );
 

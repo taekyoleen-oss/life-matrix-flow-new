@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import * as XLSX from "xlsx";
 import {
   CanvasModule,
   DataPreview,
@@ -631,6 +632,24 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     document.body.removeChild(link);
   };
 
+  // D-2: Excel 내보내기 (ScenarioRunner 및 일반 결과용)
+  const handleDownloadExcel = () => {
+    if (!data || !data.columns || !data.rows) return;
+    const wsData = [
+      data.columns.map((c) => c.name),
+      ...data.rows.map((row) =>
+        data.columns.map((col) => {
+          const val = row[col.name];
+          return val === null || val === undefined ? "" : val;
+        })
+      ),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, module.name.substring(0, 31));
+    XLSX.writeFile(wb, `${module.name.replace(/\s+/g, "_")}_data.xlsx`);
+  };
+
   if (!data) {
     return (
       <div
@@ -670,6 +689,14 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
               </svg>
               Spread View
+            </button>
+            <button
+              onClick={handleDownloadExcel}
+              className="px-3 py-1.5 text-sm bg-emerald-600 text-white rounded-md hover:bg-emerald-700 flex items-center gap-1"
+              title="Excel 다운로드"
+            >
+              <ArrowDownTrayIcon className="w-4 h-4" />
+              Excel
             </button>
             <button
               onClick={handleDownloadCSV}

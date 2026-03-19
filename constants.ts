@@ -262,7 +262,7 @@ export const DEFAULT_MODULES: Omit<CanvasModule, "id" | "position" | "name">[] =
     {
       type: ModuleType.GrossPremiumCalculator,
       status: ModuleStatus.Pending,
-      parameters: { formula: "[PP] / (1 - 0.0)", variableName: "GP" },
+      parameters: { formula: "PP / (1 - 0.0)", variableName: "GP" },
       inputs: [
         { name: "net_premium_in", type: "premium" },
         { name: "additional_vars_in", type: "variables" },

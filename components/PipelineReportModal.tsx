@@ -72,6 +72,42 @@ export const PipelineReportModal: React.FC<PipelineReportModalProps> = ({ module
                                                 ))}
                                             </div>
                                         )}
+                                        {step.auditTable && step.auditTable.rows.length > 0 && (
+                                            <div className="mt-3">
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                    <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide">계산 중간값 (Audit Trail)</span>
+                                                    {step.auditTable.totalRows !== undefined && step.auditTable.totalRows > step.auditTable.rows.length && (
+                                                        <span className="text-xs text-slate-400">– 처음 {step.auditTable.rows.length}행 / 전체 {step.auditTable.totalRows}행</span>
+                                                    )}
+                                                </div>
+                                                <div className="overflow-x-auto rounded border border-purple-100">
+                                                    <table className="min-w-full text-xs">
+                                                        <thead className="bg-purple-50">
+                                                            <tr>
+                                                                {step.auditTable.columns.map((col) => (
+                                                                    <th key={col} className="px-2 py-1.5 text-left font-semibold text-purple-700 whitespace-nowrap border-b border-purple-100">{col}</th>
+                                                                ))}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {step.auditTable.rows.map((row, ri) => (
+                                                                <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-purple-50/40'}>
+                                                                    {step.auditTable!.columns.map((col) => (
+                                                                        <td key={col} className="px-2 py-1 font-mono text-slate-700 whitespace-nowrap border-b border-purple-50">
+                                                                            {row[col] === null || row[col] === undefined
+                                                                                ? <i className="text-slate-400">–</i>
+                                                                                : typeof row[col] === 'number'
+                                                                                    ? row[col].toLocaleString(undefined, { maximumFractionDigits: 4 })
+                                                                                    : String(row[col])}
+                                                                        </td>
+                                                                    ))}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             );

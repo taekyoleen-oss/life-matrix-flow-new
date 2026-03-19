@@ -68,6 +68,8 @@ import { PipelineReportModal } from "./components/PipelineReportModal";
 import { PipelineExecutionModal } from "./components/PipelineExecutionModal";
 import SamplesModal from "./components/SamplesModal";
 import { SamplesManagementModal } from "./components/SamplesManagementModal";
+import { PolicySetupModal } from "./components/PolicySetupModal";
+import { PipelineDSLModal } from "./components/PipelineDSLModal";
 import {
   loadSharedSamples,
   saveSampleToFile,
@@ -538,10 +540,14 @@ const App: React.FC = () => {
   const lastMousePos = useRef({ x: 0, y: 0 });
 
   const hasInitialRearranged = useRef(false);
+  // DSL 빌드 후 Auto Layout 트리거 플래그
+  const pendingRearrangeAfterDSL = useRef(false);
 
   const [isSamplesMenuOpen, setIsSamplesMenuOpen] = useState(false);
   const [isSampleMenuOpen, setIsSampleMenuOpen] = useState(false);
   const [isSamplesManagementOpen, setIsSamplesManagementOpen] = useState(false);
+  const [isPolicySetupModalOpen, setIsPolicySetupModalOpen] = useState(false);
+  const [isDSLModalOpen, setIsDSLModalOpen] = useState(false);
   const [folderSamples, setFolderSamples] = useState<
     Array<{
       id?: number | string;
@@ -1004,6 +1010,17 @@ const App: React.FC = () => {
       }, 100);
     }
   }, [handleRearrangeModules, handleFitToView]);
+
+  // DSL 빌드 후 Auto Layout 실행
+  // modules + connections 양쪽이 갱신된 render에서 effect가 실행되므로 stale closure 없음
+  useEffect(() => {
+    if (!pendingRearrangeAfterDSL.current || modules.length === 0) return;
+    pendingRearrangeAfterDSL.current = false;
+    // 같은 이벤트에서 일어난 두 setState가 별도 render를 만들 경우를 대비해
+    // 한 tick 뒤에 실행하여 connections까지 반영된 handleRearrangeModules 호출
+    const t = setTimeout(() => handleRearrangeModules(), 0);
+    return () => clearTimeout(t);
+  }, [modules, connections, handleRearrangeModules]);
 
   const handleSavePipeline = useCallback(async () => {
     try {
@@ -1540,6 +1557,35 @@ const App: React.FC = () => {
     input.click();
   }, []);
 
+  const handleBuildPipelineFromDSL = useCallback(
+    (newModules: CanvasModule[], newConnections: Connection[], name: string) => {
+      resetModules(newModules);
+      _setConnections(newConnections);
+      setProductName(name);
+      setSelectedModuleIds([]);
+      setIsDirty(true);
+      // 상태 업데이트 완료 후 useEffect에서 Auto Layout 실행
+      pendingRearrangeAfterDSL.current = true;
+    },
+    [resetModules, _setConnections]
+  );
+
+  // DSL 파라미터만 적용: 기존 모듈 위치·연결 유지, 파라미터만 업데이트
+  const handlePatchParametersFromDSL = useCallback(
+    (configs: Array<{ type: ModuleType; parameters: Record<string, any> }>, name: string) => {
+      setModules((prev) =>
+        prev.map((mod) => {
+          const config = configs.find((c) => c.type === mod.type);
+          if (!config) return mod;
+          return { ...mod, parameters: { ...mod.parameters, ...config.parameters } };
+        })
+      );
+      setProductName(name);
+      setIsDirty(true);
+    },
+    [setModules]
+  );
+
   const handleConfirmOverwrite = () => {
     if (!pendingSample || !overwriteContext) return;
 
@@ -1746,6 +1792,29 @@ const App: React.FC = () => {
       setIsDirty(true);
     },
     [setModules, connections]
+  );
+
+  const handlePolicySetupApply = useCallback(
+    (
+      name: string,
+      policyParams: Record<string, any>,
+      basicValues: Array<{ name: string; value: number }>
+    ) => {
+      setProductName(name);
+      const policyModule = modules.find((m) => m.type === ModuleType.DefinePolicyInfo);
+      if (policyModule) {
+        updateModuleParameters(policyModule.id, policyParams);
+      }
+      const additionalModule = modules.find((m) => m.type === ModuleType.AdditionalName);
+      if (additionalModule) {
+        updateModuleParameters(additionalModule.id, {
+          ...additionalModule.parameters,
+          basicValues,
+        });
+      }
+      setIsDirty(true);
+    },
+    [modules, updateModuleParameters]
   );
 
   const adjustFontSize = useCallback(
@@ -1978,6 +2047,17 @@ const App: React.FC = () => {
     },
     []
   );
+
+  // D-1: 수식 보안 검증 - 허용된 문자만 포함하는지 확인 (코드 인젝션 방어)
+  // 허용: 숫자(과학 표기법 포함), 사칙연산자(+,-,*,/,**,%), 괄호, 공백, 비교/논리 연산자
+  // 차단: 문자열 리터럴, 함수 호출, 변수 참조, 브라우저 API 접근 등
+  const validateFormulaExpression = (expression: string): void => {
+    if (/[^0-9+\-*/%.()\s<>!=?:&|eE]/.test(expression)) {
+      throw new Error(
+        `수식에 허용되지 않은 문자가 포함되어 있습니다. 미해결 변수가 있거나 허용되지 않는 함수가 포함된 경우 해당 오류가 발생합니다: ${expression}`
+      );
+    }
+  };
 
   // Helper function to process IF statements in formulas
   const processIfStatements = (expression: string): string => {
@@ -2323,6 +2403,7 @@ const App: React.FC = () => {
                   // Process IF statements
                   evalFormula = processIfStatements(evalFormula);
                   try {
+                    validateFormulaExpression(evalFormula);
                     const result = new Function("return " + evalFormula)();
                     row[newColumnName] =
                       typeof result === "number" ? roundTo5(result) : result;
@@ -3618,11 +3699,7 @@ const App: React.FC = () => {
             // Remove any single brackets around numbers
             expression = expression.replace(/\[(\d+\.?\d*)\]/g, "$1");
 
-            if (/[^0-9+\-*/().\s<>!=?:&|]/.test(expression)) {
-              throw new Error(
-                `Invalid characters or unresolved variables in formula: ${expression}`
-              );
-            }
+            validateFormulaExpression(expression);
             const netPremium = new Function("return " + expression)();
 
             // Add result to context using user-defined variable name (default PP)
@@ -3797,11 +3874,7 @@ const App: React.FC = () => {
             // Process IF statements
             expression = processIfStatements(expression);
 
-            if (/[^0-9+\-*/().\s<>!=?:&|]/.test(expression)) {
-              throw new Error(
-                `Invalid characters or unresolved variables in formula: ${expression}`
-              );
-            }
+            validateFormulaExpression(expression);
             const grossPremium = new Function("return " + expression)();
 
             // Add result to context using user-defined variable name (default GP)
@@ -3905,6 +3978,7 @@ const App: React.FC = () => {
               evalFormula = processIfStatements(evalFormula);
 
               try {
+                validateFormulaExpression(evalFormula);
                 const result = new Function("return " + evalFormula)();
                 row[reserveColumnName] =
                   typeof result === "number" ? roundTo5(result) : result;
@@ -4007,6 +4081,13 @@ const App: React.FC = () => {
                 });
               } else if (mod.type === ModuleType.CalculateSurvivors) {
                 const calcs = mod.parameters.calculations || [];
+                const dp = mod.outputData as DataPreview | undefined;
+                const auditCols = dp?.columns
+                  ?.map((c) => c.name)
+                  .filter((n) =>
+                    /^(age|lx_|Dx_)/i.test(n)
+                  ) ?? [];
+                const auditRows = dp?.rows?.slice(0, 8) ?? [];
                 steps.push({
                   moduleId: mod.id,
                   moduleName: mod.name,
@@ -4016,9 +4097,23 @@ const App: React.FC = () => {
                     label: `Calculation: ${c.name}`,
                     value: `Decrements: ${(c.decrementRates || []).join(", ")}`,
                   })),
+                  ...(auditCols.length > 0 && auditRows.length > 0
+                    ? {
+                        auditTable: {
+                          columns: auditCols,
+                          rows: auditRows,
+                          totalRows: dp?.totalRowCount,
+                        },
+                      }
+                    : {}),
                 });
               } else if (mod.type === ModuleType.ClaimsCalculator) {
                 const calcs = mod.parameters.calculations || [];
+                const dp = mod.outputData as DataPreview | undefined;
+                const auditCols = dp?.columns
+                  ?.map((c) => c.name)
+                  .filter((n) => /^(age|dx_|Cx_)/i.test(n)) ?? [];
+                const auditRows = dp?.rows?.slice(0, 8) ?? [];
                 steps.push({
                   moduleId: mod.id,
                   moduleName: mod.name,
@@ -4028,10 +4123,24 @@ const App: React.FC = () => {
                     label: `Calculation: ${c.name || "Unnamed"}`,
                     value: `lx: ${c.lxColumn}, q: ${c.riskRateColumn}`,
                   })),
+                  ...(auditCols.length > 0 && auditRows.length > 0
+                    ? {
+                        auditTable: {
+                          columns: auditCols,
+                          rows: auditRows,
+                          totalRows: dp?.totalRowCount,
+                        },
+                      }
+                    : {}),
                 });
               } else if (mod.type === ModuleType.NxMxCalculator) {
                 const nx = mod.parameters.nxCalculations || [];
                 const mx = mod.parameters.mxCalculations || [];
+                const dp = mod.outputData as DataPreview | undefined;
+                const auditCols = dp?.columns
+                  ?.map((c) => c.name)
+                  .filter((n) => /^(age|Nx_|Mx_)/i.test(n)) ?? [];
+                const auditRows = dp?.rows?.slice(0, 8) ?? [];
                 steps.push({
                   moduleId: mod.id,
                   moduleName: mod.name,
@@ -4047,8 +4156,22 @@ const App: React.FC = () => {
                       value: `From: ${c.baseColumn} (Deductible: ${c.deductibleType})`,
                     })),
                   ],
+                  ...(auditCols.length > 0 && auditRows.length > 0
+                    ? {
+                        auditTable: {
+                          columns: auditCols,
+                          rows: auditRows,
+                          totalRows: dp?.totalRowCount,
+                        },
+                      }
+                    : {}),
                 });
               } else if (mod.type === ModuleType.PremiumComponent) {
+                const dp = mod.outputData as DataPreview | undefined;
+                const auditCols = dp?.columns?.map((c) => c.name).filter((n) =>
+                  /^(age|NNX|MMX|Dx_)/i.test(n)
+                ) ?? [];
+                const auditRows = dp?.rows?.slice(0, 8) ?? [];
                 steps.push({
                   moduleId: mod.id,
                   moduleName: mod.name,
@@ -4066,6 +4189,15 @@ const App: React.FC = () => {
                       })
                     ),
                   ],
+                  ...(auditCols.length > 0 && auditRows.length > 0
+                    ? {
+                        auditTable: {
+                          columns: auditCols,
+                          rows: auditRows,
+                          totalRows: dp?.totalRowCount,
+                        },
+                      }
+                    : {}),
                 });
               } else if (mod.type === ModuleType.AdditionalName) {
                 const defs = mod.parameters.definitions || [];
@@ -4406,6 +4538,70 @@ const App: React.FC = () => {
           m.type !== ModuleType.ScenarioRunner &&
           m.type !== ModuleType.PipelineExplainer
       );
+
+      // A-1: 순환 참조(Circular Dependency) 검사 (Run All 시에만)
+      if (!startModuleId) {
+        const graph = new Map<string, string[]>();
+        filteredModules.forEach((m) => graph.set(m.id, []));
+        connections.forEach((c) => {
+          const downstream = graph.get(c.from.moduleId);
+          if (downstream) downstream.push(c.to.moduleId);
+        });
+
+        const cycles: string[][] = [];
+        const visited = new Set<string>();
+        const inStack = new Set<string>();
+        const stack: string[] = [];
+
+        const dfs = (id: string) => {
+          if (inStack.has(id)) {
+            const cycleStart = stack.indexOf(id);
+            const cycleModuleNames = stack.slice(cycleStart).map((mid) => {
+              const m = filteredModules.find((mod) => mod.id === mid);
+              return m ? m.name : mid;
+            });
+            cycles.push(cycleModuleNames);
+            return;
+          }
+          if (visited.has(id)) return;
+          inStack.add(id);
+          stack.push(id);
+          for (const child of graph.get(id) || []) {
+            dfs(child);
+          }
+          stack.pop();
+          inStack.delete(id);
+          visited.add(id);
+        };
+
+        filteredModules.forEach((m) => dfs(m.id));
+
+        if (cycles.length > 0) {
+          const cycleDescriptions = cycles.map((c) => c.join(" → ")).join("\n");
+          alert(
+            `⚠️ 순환 참조(Circular Dependency) 감지됨!\n\n다음 순환 경로를 제거한 후 다시 실행해주세요:\n\n${cycleDescriptions}`
+          );
+          return;
+        }
+
+        // A-2: 필수 입력 포트 연결 검증
+        const unconnectedInputs: string[] = [];
+        filteredModules.forEach((m) => {
+          if (m.inputs.length === 0) return;
+          m.inputs.forEach((port) => {
+            const isConnected = connections.some(
+              (c) => c.to.moduleId === m.id && c.to.portName === port.name
+            );
+            if (!isConnected) {
+              unconnectedInputs.push(`• ${m.name}: '${port.name}' 입력 포트 미연결`);
+            }
+          });
+        });
+
+        if (unconnectedInputs.length > 0) {
+          console.warn("미연결 입력 포트:\n" + unconnectedInputs.join("\n"));
+        }
+      }
 
       const runQueue = startModuleId
         ? [startModuleId]
@@ -4859,6 +5055,22 @@ const App: React.FC = () => {
             >
               <BeakerIcon className="h-4 w-4" />
               <span>Samples</span>
+            </button>
+            <button
+              onClick={() => setIsPolicySetupModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
+              title="상품 정보, 증권 기본 정보, 사업비 설정"
+            >
+              <span>⚙️</span>
+              <span>상품 정보 설정</span>
+            </button>
+            <button
+              onClick={() => setIsDSLModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white"
+              title="출력=수식 형태로 파이프라인 전체 정의"
+            >
+              <span>📝</span>
+              <span>DSL 정의</span>
             </button>
             <div className="relative flex-shrink-0" style={{ zIndex: 1000 }}>
               <button
@@ -5530,6 +5742,29 @@ const App: React.FC = () => {
           loadFolderSamplesLocal();
         }}
       />
+
+      {/* Policy Setup Modal */}
+      {isPolicySetupModalOpen && (
+        <PolicySetupModal
+          isOpen={isPolicySetupModalOpen}
+          onClose={() => setIsPolicySetupModalOpen(false)}
+          productName={productName}
+          modules={modules}
+          onApply={handlePolicySetupApply}
+        />
+      )}
+
+      {/* Pipeline DSL Modal */}
+      {isDSLModalOpen && (
+        <PipelineDSLModal
+          isOpen={isDSLModalOpen}
+          onClose={() => setIsDSLModalOpen(false)}
+          productName={productName}
+          modules={modules}
+          onBuildPipeline={handleBuildPipelineFromDSL}
+          onPatchParameters={handlePatchParametersFromDSL}
+        />
+      )}
     </div>
   );
 };

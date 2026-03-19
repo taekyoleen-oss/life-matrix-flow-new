@@ -272,6 +272,11 @@ export interface PipelineReportStep {
   moduleType: ModuleType;
   description: string;
   details: { label: string; value: string }[];
+  auditTable?: {
+    columns: string[];
+    rows: Record<string, any>[];
+    totalRows?: number;
+  };
 }
 
 export interface PipelineExplainerOutput {

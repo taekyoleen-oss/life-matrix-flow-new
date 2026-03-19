@@ -531,58 +531,25 @@ const NetPremiumCalculatorParams: React.FC<{
   };
 
   const insertToken = (variableKey: string) => {
-    const token = `[${variableKey}]`;
     const textarea = textAreaRef.current;
     if (textarea) {
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       const text = formula || "";
-      const newText = text.substring(0, start) + token + text.substring(end);
-
+      const newText = text.substring(0, start) + variableKey + text.substring(end);
       onParametersChange({ ...parameters, formula: newText });
-
       setTimeout(() => {
         textarea.focus();
-        const newCursorPos = start + token.length;
+        const newCursorPos = start + variableKey.length;
         textarea.setSelectionRange(newCursorPos, newCursorPos);
       }, 0);
     } else {
-      onParametersChange({ ...parameters, formula: (formula || "") + token });
+      onParametersChange({ ...parameters, formula: (formula || "") + variableKey });
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Backspace") {
-      const textarea = e.currentTarget;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-
-      if (start === end && start > 0) {
-        const text = formula || "";
-        if (text[start - 1] === "]") {
-          const openBracketIndex = text.lastIndexOf("[", start - 1);
-          if (openBracketIndex !== -1) {
-            const token = text.substring(openBracketIndex, start);
-            if (token.length > 2) {
-              e.preventDefault();
-              const newText =
-                text.substring(0, openBracketIndex) + text.substring(start);
-              onParametersChange({ ...parameters, formula: newText });
-
-              setTimeout(() => {
-                if (textAreaRef.current) {
-                  textAreaRef.current.focus();
-                  textAreaRef.current.setSelectionRange(
-                    openBracketIndex,
-                    openBracketIndex
-                  );
-                }
-              }, 0);
-            }
-          }
-        }
-      }
-    }
+  const handleKeyDown = (_e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 브래킷 토큰 방식 제거 — 기본 키 동작 사용
   };
 
   const getVarColor = (type: string) => {
@@ -996,58 +963,25 @@ const GrossPremiumCalculatorParams: React.FC<{
   };
 
   const insertToken = (variableKey: string) => {
-    const token = `[${variableKey}]`;
     const textarea = textAreaRef.current;
     if (textarea) {
       const start = textarea.selectionStart;
       const end = textarea.selectionEnd;
       const text = formula || "";
-      const newText = text.substring(0, start) + token + text.substring(end);
-
+      const newText = text.substring(0, start) + variableKey + text.substring(end);
       onParametersChange({ ...parameters, formula: newText });
-
       setTimeout(() => {
         textarea.focus();
-        const newCursorPos = start + token.length;
+        const newCursorPos = start + variableKey.length;
         textarea.setSelectionRange(newCursorPos, newCursorPos);
       }, 0);
     } else {
-      onParametersChange({ ...parameters, formula: (formula || "") + token });
+      onParametersChange({ ...parameters, formula: (formula || "") + variableKey });
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Backspace") {
-      const textarea = e.currentTarget;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-
-      if (start === end && start > 0) {
-        const text = formula || "";
-        if (text[start - 1] === "]") {
-          const openBracketIndex = text.lastIndexOf("[", start - 1);
-          if (openBracketIndex !== -1) {
-            const token = text.substring(openBracketIndex, start);
-            if (token.length > 2) {
-              e.preventDefault();
-              const newText =
-                text.substring(0, openBracketIndex) + text.substring(start);
-              onParametersChange({ ...parameters, formula: newText });
-
-              setTimeout(() => {
-                if (textAreaRef.current) {
-                  textAreaRef.current.focus();
-                  textAreaRef.current.setSelectionRange(
-                    openBracketIndex,
-                    openBracketIndex
-                  );
-                }
-              }, 0);
-            }
-          }
-        }
-      }
-    }
+  const handleKeyDown = (_e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 브래킷 토큰 방식 제거 — 기본 키 동작 사용
   };
 
   const getVarColor = (type: string) => {
@@ -2664,6 +2598,48 @@ const CalculateSurvivorsParams: React.FC<{
     updateCalculations([...(calculations || []), newCalc]);
   };
 
+  const handleAddFixedCalculation = () => {
+    const newCalcId = `calc-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 7)}`;
+    const newCalc = {
+      id: newCalcId,
+      name: "Fixed",
+      fixedValue: 100000,
+    };
+    updateCalculations([...(calculations || []), newCalc]);
+  };
+
+  const handleToggleCalcType = (id: string) => {
+    const newCalculations = (calculations || []).map((calc: any) => {
+      if (calc.id !== id) return calc;
+      if (calc.fixedValue !== undefined) {
+        // 고정값 → 감소율
+        const { fixedValue, ...rest } = calc;
+        return { ...rest, decrementRates: [] };
+      } else {
+        // 감소율 → 고정값
+        const { decrementRates, ...rest } = calc;
+        return { ...rest, fixedValue: 100000, name: calc.name || "Fixed" };
+      }
+    });
+    updateCalculations(newCalculations);
+  };
+
+  const handleFixedValueChange = (id: string, value: number) => {
+    const newCalculations = (calculations || []).map((calc: any) =>
+      calc.id === id ? { ...calc, fixedValue: value } : calc
+    );
+    updateCalculations(newCalculations);
+  };
+
+  const handleFixedNameChange = (id: string, name: string) => {
+    const newCalculations = (calculations || []).map((calc: any) =>
+      calc.id === id ? { ...calc, name } : calc
+    );
+    updateCalculations(newCalculations);
+  };
+
   const handleRemoveCalculation = (id: string) => {
     updateCalculations((calculations || []).filter((c: any) => c.id !== id));
   };
@@ -2757,10 +2733,13 @@ const CalculateSurvivorsParams: React.FC<{
           <div className="space-y-2">
             <div className="flex flex-col space-y-2">
               {(calculations || []).map((calc: any) => {
+                const isFixed = calc.fixedValue !== undefined;
                 const availableRates = numericColumns.filter(
                   (c) =>
                     c !== ageColumn && !(calc.decrementRates || []).includes(c)
                 );
+                const lxColName = calc.name ? `lx_${calc.name}` : 'lx';
+                const dxColName = calc.name ? `Dx_${calc.name}` : 'Dx';
                 return (
                   <div
                     key={calc.id}
@@ -2773,105 +2752,162 @@ const CalculateSurvivorsParams: React.FC<{
                       <XMarkIcon className="w-4 h-4" />
                     </button>
 
-                    <div className="flex items-center gap-2 w-full min-w-0">
-                      <div
-                        className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0"
-                        title={`Resulting column name: lx_${calc.name}`}
-                      >
-                        <span className="text-gray-400">lx_</span>
-                        <input
-                          type="text"
-                          placeholder="<auto-generated>"
-                          value={calc.name}
-                          readOnly
-                          className="w-32 bg-transparent focus:outline-none text-gray-400 cursor-default"
-                        />
-                      </div>
-
-                      <div className="flex-grow bg-gray-700 p-1.5 rounded-md border border-gray-600 min-h-[38px] flex flex-wrap gap-1 content-start items-center min-w-0">
-                        {(calc.decrementRates || []).length === 0 && (
-                          <p className="text-xs text-gray-500 px-1">
-                            Add decrement rates...
-                          </p>
-                        )}
-                        {(calc.decrementRates || []).map((rate: string) => {
-                          // If there's a selected rate in combobox and it matches this rate, show the combobox value
-                          // Otherwise, if the rate is "Mortality" and combobox has "Male_Mortality", show "Male_Mortality"
-                          let displayValue = rate;
-                          if (selectedRates[calc.id] && selectedRates[calc.id] === rate) {
-                            displayValue = selectedRates[calc.id];
-                          } else if (rate === "Mortality" && selectedRates[calc.id] === "Male_Mortality") {
-                            displayValue = "Male_Mortality";
-                          }
-                          return (
-                            <div
-                              key={rate}
-                              className="flex items-center gap-1 bg-blue-600/50 text-blue-100 px-2 py-0.5 rounded text-xs h-fit"
-                            >
-                              <span>{displayValue}</span>
-                              <button
-                                onClick={() =>
-                                  handleRemoveRateFromCalc(calc.id, rate)
-                                }
-                              >
-                                <XMarkIcon className="w-3 h-3" />
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex gap-2 flex-shrink-0">
-                        <select
-                          value={selectedRates[calc.id] || ""}
-                          onChange={(e) =>
-                            setSelectedRates((prev) => ({
-                              ...prev,
-                              [calc.id]: e.target.value,
-                            }))
-                          }
-                          className="w-40 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          disabled={availableRates.length === 0}
-                        >
-                          <option value="" disabled>
-                            -- Select Decrement Rate --
-                          </option>
-                          {availableRates.map((opt) => (
-                            <option key={opt} value={opt}>
-                              {opt}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={() => handleAddRateToCalc(calc.id)}
-                          disabled={!selectedRates[calc.id]}
-                          className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md font-semibold whitespace-nowrap h-[38px] disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
-                        >
-                          Add Rate
-                        </button>
-                      </div>
+                    {/* 타입 토글 */}
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <button
+                        onClick={() => handleToggleCalcType(calc.id)}
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${!isFixed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                      >감소율</button>
+                      <button
+                        onClick={() => handleToggleCalcType(calc.id)}
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${isFixed ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                      >고정값</button>
                     </div>
+
+                    {isFixed ? (
+                      /* ── 고정값 UI */
+                      <div className="flex items-center gap-2 w-full">
+                        {/* 출력 열 이름 */}
+                        <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0">
+                          <span className="text-gray-400 mr-1">출력:</span>
+                          <span className="text-gray-300 mr-0.5">lx</span>
+                          {calc.name && calc.name !== 'Fixed' && (
+                            <span className="text-gray-400">_{calc.name}</span>
+                          )}
+                        </div>
+                        <span className="text-gray-500 text-sm">=</span>
+                        {/* 고정값 입력 */}
+                        <div className="flex items-center bg-gray-700 border border-emerald-700 rounded px-2 py-1.5 text-sm h-[38px]">
+                          <span className="text-gray-400 mr-1">입력:</span>
+                          <input
+                            type="number"
+                            value={calc.fixedValue}
+                            onChange={(e) => handleFixedValueChange(calc.id, Number(e.target.value))}
+                            className="w-28 bg-transparent focus:outline-none text-emerald-300 font-mono"
+                          />
+                        </div>
+                        {/* 이름 편집 */}
+                        <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0">
+                          <span className="text-gray-400 mr-1 text-xs">이름:</span>
+                          <input
+                            type="text"
+                            value={calc.name === 'Fixed' ? '' : calc.name}
+                            placeholder="(선택)"
+                            onChange={(e) => handleFixedNameChange(calc.id, e.target.value || 'Fixed')}
+                            className="w-20 bg-transparent focus:outline-none text-gray-300 text-xs"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── 감소율 UI (기존) */
+                      <div className="flex items-center gap-2 w-full min-w-0">
+                        <div
+                          className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0"
+                          title={`Resulting column name: ${lxColName}`}
+                        >
+                          <span className="text-gray-400">lx_</span>
+                          <input
+                            type="text"
+                            placeholder="<auto-generated>"
+                            value={calc.name}
+                            readOnly
+                            className="w-32 bg-transparent focus:outline-none text-gray-400 cursor-default"
+                          />
+                        </div>
+
+                        <div className="flex-grow bg-gray-700 p-1.5 rounded-md border border-gray-600 min-h-[38px] flex flex-wrap gap-1 content-start items-center min-w-0">
+                          {(calc.decrementRates || []).length === 0 && (
+                            <p className="text-xs text-gray-500 px-1">
+                              Add decrement rates...
+                            </p>
+                          )}
+                          {(calc.decrementRates || []).map((rate: string) => {
+                            let displayValue = rate;
+                            if (selectedRates[calc.id] && selectedRates[calc.id] === rate) {
+                              displayValue = selectedRates[calc.id];
+                            } else if (rate === "Mortality" && selectedRates[calc.id] === "Male_Mortality") {
+                              displayValue = "Male_Mortality";
+                            }
+                            return (
+                              <div
+                                key={rate}
+                                className="flex items-center gap-1 bg-blue-600/50 text-blue-100 px-2 py-0.5 rounded text-xs h-fit"
+                              >
+                                <span>{displayValue}</span>
+                                <button
+                                  onClick={() =>
+                                    handleRemoveRateFromCalc(calc.id, rate)
+                                  }
+                                >
+                                  <XMarkIcon className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="flex gap-2 flex-shrink-0">
+                          <select
+                            value={selectedRates[calc.id] || ""}
+                            onChange={(e) =>
+                              setSelectedRates((prev) => ({
+                                ...prev,
+                                [calc.id]: e.target.value,
+                              }))
+                            }
+                            className="w-40 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={availableRates.length === 0}
+                          >
+                            <option value="" disabled>
+                              -- Select Decrement Rate --
+                            </option>
+                            {availableRates.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => handleAddRateToCalc(calc.id)}
+                            disabled={!selectedRates[calc.id]}
+                            className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md font-semibold whitespace-nowrap h-[38px] disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
+                          >
+                            Add Rate
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="text-xs text-gray-500">
                       Outputs:{" "}
-                      <span className="text-blue-300">
-                        lx_{calc.name || "?"}
-                      </span>
-                      ,{" "}
-                      <span className="text-blue-300">
-                        Dx_{calc.name || "?"}
-                      </span>
+                      <span className="text-blue-300">{lxColName}</span>
+                      {!isFixed && (
+                        <>, <span className="text-blue-300">{dxColName}</span></>
+                      )}
+                      {isFixed && (
+                        <span className="ml-2 text-emerald-600">
+                          — 모든 행: {calc.fixedValue?.toLocaleString()}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
               })}
             </div>
-            <button
-              onClick={handleAddCalculation}
-              className="w-full mt-2 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-md font-semibold"
-            >
-              Add Calculation
-            </button>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleAddCalculation}
+                className="flex-1 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-md font-semibold"
+              >
+                + 감소율 lx 추가
+              </button>
+              <button
+                onClick={handleAddFixedCalculation}
+                className="flex-1 px-3 py-1.5 text-xs bg-emerald-700 hover:bg-emerald-600 rounded-md font-semibold"
+              >
+                + 고정값 lx 추가
+              </button>
+            </div>
           </div>
         ) : (
           <p className="text-xs text-gray-500">
