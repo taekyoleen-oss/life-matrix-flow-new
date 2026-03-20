@@ -146,8 +146,10 @@ const FIELD_MAP: Record<ModuleType, Record<string, FieldSpec>> = {
   [ModuleType.PremiumComponent]: {
     'NNX 계산 목록': { key: 'nnxCalculations', type: 'json' },
     'NNX Calculations': { key: 'nnxCalculations', type: 'json' },
-    'SUMX 계산 목록': { key: 'sumxCalculations', type: 'json' },
-    'SUMX Calculations': { key: 'sumxCalculations', type: 'json' },
+    'BPV 계산 목록': { key: 'sumxCalculations', type: 'json' },
+    'SUMX 계산 목록': { key: 'sumxCalculations', type: 'json' },  // backward compat
+    'BPV Calculations': { key: 'sumxCalculations', type: 'json' },
+    'SUMX Calculations': { key: 'sumxCalculations', type: 'json' }, // backward compat
   },
   [ModuleType.AdditionalName]: {
     '기본값': { key: 'basicValues', type: 'json' },

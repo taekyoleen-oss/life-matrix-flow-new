@@ -85,6 +85,8 @@ import {
 } from "./utils/supabase-samples";
 import { savePipeline, loadPipeline } from "./utils/fileOperations";
 import { loadModuleDefault } from "./utils/moduleDefaults";
+import { buildPipelineFromModel } from "./utils/pipelineBuilder";
+import { generateDSL, extractModuleSection, replaceModuleSection } from "./utils/dslParser";
 
 const getModuleDefault = (type: ModuleType) => {
   const defaultData = DEFAULT_MODULES.find((m) => m.type === type)!;
@@ -226,7 +228,7 @@ const initialModules: CanvasModule[] = lifxModules.length > 0 ? lifxModules : [
     ...getModuleDefault(ModuleType.NetPremiumCalculator),
     position: { x: 320, y: 220 },
     parameters: {
-      formula: "[SUMX] / [NNX_Male_Mortality(Year)]",
+      formula: "[BPV_Mortality] / [NNX_Mortality(Year)]",
       variableName: "PP",
     },
   },
@@ -1571,19 +1573,77 @@ const App: React.FC = () => {
   );
 
   // DSL 파라미터만 적용: 기존 모듈 위치·연결 유지, 파라미터만 업데이트
+  // DSL에 있지만 캔버스에 없는 모듈은 새로 생성하여 추가
   const handlePatchParametersFromDSL = useCallback(
     (configs: Array<{ type: ModuleType; parameters: Record<string, any> }>, name: string) => {
-      setModules((prev) =>
-        prev.map((mod) => {
+      setModules((prev) => {
+        // 1. 기존 모듈 파라미터 업데이트
+        const patched = prev.map((mod) => {
           const config = configs.find((c) => c.type === mod.type);
           if (!config) return mod;
           return { ...mod, parameters: { ...mod.parameters, ...config.parameters } };
-        })
-      );
+        });
+
+        // 2. 캔버스에 없는 DSL 모듈 찾기
+        const existingTypes = new Set(prev.map((m) => m.type));
+        const missingConfigs = configs.filter((c) => !existingTypes.has(c.type));
+        if (missingConfigs.length === 0) return patched;
+
+        // 3. 누락 모듈만 buildPipelineFromModel로 생성 (DefinePolicyInfo 제외)
+        const missingParsedModules = missingConfigs
+          .filter((c) => c.type !== ModuleType.DefinePolicyInfo)
+          .map((c) => ({ type: c.type, include: true, parameters: c.parameters }));
+        if (missingParsedModules.length === 0) return patched;
+
+        const allParsedModules = [
+          ...prev.map((m) => ({ type: m.type, include: true, parameters: m.parameters })),
+          ...missingParsedModules,
+        ];
+        const { modules: rebuilt } = buildPipelineFromModel({
+          productName: name,
+          description: '',
+          modules: allParsedModules,
+        });
+
+        // 4. 기존 모듈 위치 유지 + 새 모듈 추가
+        const newModulesByType = new Map(rebuilt.map((m) => [m.type, m]));
+        const result = patched.map((m) => {
+          const rebuiltMod = newModulesByType.get(m.type);
+          return rebuiltMod ? { ...rebuiltMod, position: m.position } : m;
+        });
+        missingParsedModules.forEach(({ type }) => {
+          const newMod = newModulesByType.get(type);
+          if (newMod) result.push(newMod);
+        });
+        return result;
+      });
       setProductName(name);
       setIsDirty(true);
     },
     [setModules]
+  );
+
+  const DRAFT_KEY = 'lmf_dsl_draft';
+
+  // 모듈 저장 시 DSL 드래프트의 해당 섹션을 파라미터 기준으로 동기화
+  const handleModuleSaved = useCallback(
+    (moduleType: ModuleType, savedParams: Record<string, any>) => {
+      // 현재 캔버스 모듈 목록에서 해당 모듈 파라미터를 저장된 값으로 대체
+      const snapshotModules = modules.map((m) =>
+        m.type === moduleType ? { ...m, parameters: savedParams } : m
+      );
+      const newSection = extractModuleSection(
+        generateDSL(productName, snapshotModules),
+        moduleType
+      );
+      if (!newSection) return;
+      const currentDraft = localStorage.getItem(DRAFT_KEY) ?? '';
+      const updatedDraft = currentDraft
+        ? replaceModuleSection(currentDraft, moduleType, newSection)
+        : generateDSL(productName, snapshotModules);
+      localStorage.setItem(DRAFT_KEY, updatedDraft);
+    },
+    [modules, productName]
   );
 
   const handleConfirmOverwrite = () => {
@@ -3191,16 +3251,16 @@ const App: React.FC = () => {
               // Skip if mxColumn is not set
               if (!calc.mxColumn) continue;
 
-              // Get mx_start from first row
-              const mx_start_val = rows[0]?.[calc.mxColumn];
-              const mx_start =
-                mx_start_val !== undefined && mx_start_val !== null
-                  ? Number(mx_start_val)
-                  : 0;
+              // BPV = (Mx[0] - Mx[n]) × amount
+              const mx0_val = rows[0]?.[calc.mxColumn];
+              const mx0 = mx0_val !== undefined && mx0_val !== null ? Number(mx0_val) : 0;
 
-              // Calculate benefit PV: MMX = amount * Mx[0]
+              const mxN_row = rows[policyTerm];
+              const mxN_val = mxN_row?.[calc.mxColumn];
+              const mxN = mxN_val !== undefined && mxN_val !== null ? Number(mxN_val) : 0;
+
               const amount = Number(calc.amount) || 0;
-              const benefit_pv = amount * mx_start;
+              const benefit_pv = (mx0 - mxN) * amount;
 
               // Only add if valid number
               if (!isNaN(benefit_pv) && isFinite(benefit_pv)) {
@@ -3211,7 +3271,13 @@ const App: React.FC = () => {
               mxResults[resultName] = roundTo5(benefit_pv);
             }
 
-            // Create enhanced table data with NNX and MMX columns
+            // Build BPV results: BPV_Mortality, BPV_CI, etc.
+            const bpvResults: Record<string, number> = {};
+            for (const [baseName, val] of Object.entries(mxResults)) {
+              bpvResults[`BPV_${baseName}`] = val;
+            }
+
+            // Create enhanced table data with NNX and BPV columns
             const enhancedRows = rows.map((row, rowIndex) => {
               const newRow = { ...row };
 
@@ -3269,8 +3335,7 @@ const App: React.FC = () => {
                 }
               }
 
-              // Add MMX column: Single column that sums all Mx columns multiplied by their Benefit Amount
-              // MMX_Col = SUM(Mx_i * BenefitAmount_i) for all i
+              // Add BPV column: Sum of all Mx columns × Benefit Amount
               let mmxValue = 0;
               for (const calc of sumxCalculations) {
                 if (!calc.mxColumn) continue;
@@ -3278,7 +3343,7 @@ const App: React.FC = () => {
                 const benefitAmount = Number(calc.amount) || 0;
                 mmxValue += mxVal * benefitAmount;
               }
-              newRow["MMX_Col"] = roundTo5(mmxValue);
+              newRow["BPV_Col"] = roundTo5(mmxValue);
 
               return newRow;
             });
@@ -3309,13 +3374,13 @@ const App: React.FC = () => {
                 }
               }
             }
-            // Add single MMX column (sum of all Mx columns multiplied by Benefit Amount)
+            // Add BPV column (sum of all Mx columns × Benefit Amount)
             if (
               sumxCalculations.length > 0 &&
-              !enhancedColumns.find((c) => c.name === "MMX_Col")
+              !enhancedColumns.find((c) => c.name === "BPV_Col")
             ) {
               enhancedColumns.push({
-                name: "MMX_Col",
+                name: "BPV_Col",
                 type: "number",
               });
             }
@@ -3330,6 +3395,7 @@ const App: React.FC = () => {
             newOutputData = {
               type: "PremiumComponentOutput",
               nnxResults,
+              bpvResults,
               mmxValue: roundTo5(mmxValue),
               mxResults,
               data: enhancedData,
@@ -3596,8 +3662,11 @@ const App: React.FC = () => {
             const additionalData = additionalVarsOutput.data;
 
             const context: Record<string, any> = {
-              ...premiumComponents.nnxResults,
-              MMX: premiumComponents.mmxValue,
+              ...premiumComponents.nnxResults,   // NNX_Mortality(Year), NNX_Mortality(Half), ...
+              ...(premiumComponents.bpvResults ?? {}), // BPV_Mortality, BPV_CI, ...
+              MMX: premiumComponents.mmxValue,   // backward compat (total)
+              SUMX: premiumComponents.mmxValue,  // backward compat
+              BPV: premiumComponents.mmxValue,   // total BPV
               m: policyInfo.paymentTerm,
               n: policyInfo.policyTerm,
               ...additionalVars,
@@ -4176,7 +4245,7 @@ const App: React.FC = () => {
                   moduleId: mod.id,
                   moduleName: mod.name,
                   moduleType: mod.type,
-                  description: "Aggregated NNX and MMX components.",
+                  description: "Aggregated NNX and BPV components.",
                   details: [
                     ...(mod.parameters.nnxCalculations || []).map((c: any) => ({
                       label: "NNX Source",
@@ -4184,7 +4253,7 @@ const App: React.FC = () => {
                     })),
                     ...(mod.parameters.sumxCalculations || []).map(
                       (c: any) => ({
-                        label: "MMX Source",
+                        label: "BPV Source",
                         value: `${c.mxColumn} (Amount: ${c.amount})`,
                       })
                     ),
@@ -5659,6 +5728,7 @@ const App: React.FC = () => {
           onRunModule={async (id) => {
             await runSimulation(id);
           }}
+          onModuleSaved={handleModuleSaved}
         />
       )}
 

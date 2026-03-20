@@ -11,7 +11,7 @@
  *   Death_Rate = Male_Mortality
  *
  *   ## NetPremiumCalculator
- *   NP = SUMX / NNX
+ *   NP = BPV / NNX
  */
 
 import { ModuleType } from '../types';
@@ -234,11 +234,23 @@ function buildClaimsCalculatorParams(lines: Array<{ output: string; formula: str
 function buildNxMxParams(lines: Array<{ output: string; formula: string }>) {
   const nxCalculations: any[] = [];
   const mxCalculations: any[] = [];
+  // DSL에서 인식하는 공제 옵션 (ParameterInputModal의 옵션과 동일)
+  const KNOWN_DEDUCT = new Set(['0', '0.25', '0.5']);
+
   for (const { output, formula } of lines) {
     const outLow = output.toLowerCase();
-    // Nx = sum(Dx_Mortality) 또는 Nx = Σ(Dx_Mortality)
+    // sum(col), cumsum_rev(col), cumsum_rev(col, deduct=X), Σ(col) 모두 지원
     const colMatch = formula.match(/\(([^)]+)\)/);
-    const baseColumn = colMatch ? colMatch[1].trim() : formula.trim();
+    const innerContent = colMatch ? colMatch[1].trim() : formula.trim();
+
+    // deduct 파라미터 파싱: cumsum_rev(Cx_CI, deduct=0.5) → deductibleType='0.5'
+    const deductMatch = innerContent.match(/,\s*deduct\s*=\s*([\d.]+)/i);
+    const deductValue = deductMatch ? deductMatch[1] : '0';
+    const deductibleType = KNOWN_DEDUCT.has(deductValue) ? deductValue : 'custom';
+    const customDeductible = parseFloat(deductValue) || 0;
+
+    // 첫 번째 인자가 baseColumn
+    const baseColumn = innerContent.split(',')[0].trim();
     // output 변수 이름에서 name 파생: Nx_Mortality → "Mortality", Mx_CI → "CI"
     const nameFromOutput = output.replace(/^[NnMm]x_?/i, '').trim();
     const name = nameFromOutput || baseColumn.replace(/^[Dd]x_?/, '').replace(/^[Cc]x_?/, '') || output;
@@ -251,8 +263,8 @@ function buildNxMxParams(lines: Array<{ output: string; formula: string }>) {
         baseColumn,
         name,
         active: true,
-        deductibleType: '0',
-        customDeductible: 0,
+        deductibleType,
+        customDeductible,
         paymentRatios: [{ year: 1, type: '100%', customValue: 100 }],
       });
     }
@@ -271,13 +283,14 @@ function buildPremiumComponentParams(lines: Array<{ output: string; formula: str
       const colMatch = formula.match(/([A-Za-z_]\w*)\[/);
       const nxCol = colMatch ? colMatch[1] : 'Nx_Mortality';
       nnxCalculations.push({ id: `nnx-${nnxCalculations.length}`, nxColumn: nxCol });
-    } else if (outLow === 'sumx' || outLow.startsWith('sumx')) {
-      // SUMX = Mx[0] * 10000  → mxColumn + amount 추출
-      const colMatch = formula.match(/([A-Za-z_]\w*)\[?/);
+    } else if (outLow === 'bpv' || outLow.startsWith('bpv_') || outLow === 'sumx' || outLow.startsWith('sumx')) {
+      // BPV_Mortality = (Mx_Mortality[0] - Mx_Mortality[n]) * 10000  → mxColumn + amount 추출
+      const colMatch = formula.match(/([A-Za-z_]\w*)\[/);
       const mxCol = colMatch ? colMatch[1] : 'Mx_Mortality';
-      const amtMatch = formula.match(/\*\s*([\d,]+)/);
-      const amount = amtMatch ? Number(amtMatch[1].replace(/,/g, '')) : 10000;
-      sumxCalculations.push({ id: `sumx-${sumxCalculations.length}`, mxColumn: mxCol, amount });
+      const amtMatch = formula.match(/\)\s*\*\s*([\d,]+)|\*\s*([\d,]+)/);
+      const amtStr = amtMatch ? (amtMatch[1] ?? amtMatch[2]) : '10000';
+      const amount = Number(amtStr.replace(/,/g, '')) || 10000;
+      sumxCalculations.push({ id: `bpv-${sumxCalculations.length}`, mxColumn: mxCol, amount });
     }
   }
   return { nnxCalculations, sumxCalculations };
@@ -300,6 +313,18 @@ function buildAdditionalNameParams(lines: Array<{ output: string; formula: strin
   return { basicValues, definitions: [] };
 }
 
+/** DSL 수식의 식별자에 대괄호를 복원한다: BPV / NNX → [BPV] / [NNX] */
+function addVarBrackets(formula: string): string {
+  // 이미 대괄호가 있으면 그대로 반환 (UI에서 직접 입력한 경우)
+  if (formula.includes('[')) return formula;
+  // 숫자·연산자가 아닌 식별자(알파·그리스문자·밑줄로 시작)에 대괄호 추가
+  // NNX_Mortality(Year) 같이 괄호 접미사가 있는 경우도 포함
+  return formula.replace(
+    /([A-Za-z_\u03B1-\u03C9\u0391-\u03A9][A-Za-z0-9_\u03B1-\u03C9\u0391-\u03A9]*(?:\([^)]*\))?)/g,
+    '[$1]'
+  );
+}
+
 function buildFormulaParams(
   lines: Array<{ output: string; formula: string }>,
   defaultVarName: string
@@ -307,7 +332,7 @@ function buildFormulaParams(
   // Net/Gross Premium: 첫 번째 줄이 "VarName = formula"
   const first = lines[0];
   if (!first) return { formula: '', variableName: defaultVarName };
-  return { formula: first.formula, variableName: first.output };
+  return { formula: addVarBrackets(first.formula), variableName: first.output };
 }
 
 function buildReserveParams(lines: Array<{ output: string; formula: string }>) {
@@ -486,6 +511,61 @@ function stripVarBrackets(formula: string): string {
   return formula.replace(/(?<![}\])\w])\[([A-Za-zα-ωΑ-Ω_][A-Za-z0-9α-ωΑ-Ω_]*)\]/g, '$1');
 }
 
+// ── DSL 섹션 레이블 맵 (모듈타입 → ## 헤더명)
+export const DSL_MODULE_LABELS: Partial<Record<ModuleType, string>> = {
+  [ModuleType.LoadData]: 'LoadData',
+  [ModuleType.SelectRiskRates]: 'SelectRiskRates',
+  [ModuleType.SelectData]: 'SelectData',
+  [ModuleType.RateModifier]: 'RateModifier',
+  [ModuleType.CalculateSurvivors]: 'CalculateSurvivors',
+  [ModuleType.ClaimsCalculator]: 'ClaimsCalculator',
+  [ModuleType.NxMxCalculator]: 'NxMxCalculator',
+  [ModuleType.PremiumComponent]: 'PremiumComponent',
+  [ModuleType.AdditionalName]: 'AdditionalName',
+  [ModuleType.NetPremiumCalculator]: 'NetPremiumCalculator',
+  [ModuleType.GrossPremiumCalculator]: 'GrossPremiumCalculator',
+  [ModuleType.ReserveCalculator]: 'ReserveCalculator',
+  [ModuleType.ScenarioRunner]: 'ScenarioRunner',
+};
+
+/** 전체 DSL 텍스트에서 특정 모듈의 섹션만 추출 (## Label 헤더 포함, 다음 ## 직전까지) */
+export function extractModuleSection(dsl: string, moduleType: ModuleType): string {
+  const label = DSL_MODULE_LABELS[moduleType];
+  if (!label) return '';
+  const lines = dsl.split('\n');
+  let inSection = false;
+  const sectionLines: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith(`## ${label}`)) {
+      inSection = true;
+      sectionLines.push(line);
+    } else if (inSection) {
+      if (line.startsWith('## ')) break;
+      sectionLines.push(line);
+    }
+  }
+  return sectionLines.join('\n').trimEnd();
+}
+
+/** 전체 DSL 텍스트에서 특정 모듈 섹션을 newSection 으로 교체; 섹션이 없으면 끝에 추가 */
+export function replaceModuleSection(dsl: string, moduleType: ModuleType, newSection: string): string {
+  const label = DSL_MODULE_LABELS[moduleType];
+  if (!label) return dsl;
+  const lines = dsl.split('\n');
+  const startIdx = lines.findIndex(l => l.startsWith(`## ${label}`));
+  if (startIdx === -1) {
+    return dsl.trimEnd() + '\n\n' + newSection.trimEnd();
+  }
+  let endIdx = lines.length;
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    if (lines[i].startsWith('## ')) { endIdx = i; break; }
+  }
+  const before = lines.slice(0, startIdx);
+  const after = lines.slice(endIdx);
+  const combined = [...before, ...newSection.trimEnd().split('\n'), '', ...after];
+  return combined.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function generateDSL(
   productName: string,
   modules: Array<{ type: ModuleType; parameters: Record<string, any> }>
@@ -515,20 +595,61 @@ export function generateDSL(
     ModuleType.ScenarioRunner,
   ];
 
-  const LABELS: Partial<Record<ModuleType, string>> = {
-    [ModuleType.LoadData]: 'LoadData',
-    [ModuleType.SelectRiskRates]: 'SelectRiskRates',
-    [ModuleType.SelectData]: 'SelectData',
-    [ModuleType.RateModifier]: 'RateModifier',
-    [ModuleType.CalculateSurvivors]: 'CalculateSurvivors',
-    [ModuleType.ClaimsCalculator]: 'ClaimsCalculator',
-    [ModuleType.NxMxCalculator]: 'NxMxCalculator',
-    [ModuleType.PremiumComponent]: 'PremiumComponent',
-    [ModuleType.AdditionalName]: 'AdditionalName',
-    [ModuleType.NetPremiumCalculator]: 'NetPremiumCalculator',
-    [ModuleType.GrossPremiumCalculator]: 'GrossPremiumCalculator',
-    [ModuleType.ReserveCalculator]: 'ReserveCalculator',
-    [ModuleType.ScenarioRunner]: 'ScenarioRunner',
+  const LABELS = DSL_MODULE_LABELS;
+
+  // ── 모듈별 한글 설명 주석 (DSL 편집기에서 사용자가 볼 수 있도록)
+  const MODULE_COMMENTS: Partial<Record<ModuleType, string[]>> = {
+    [ModuleType.LoadData]: [
+      '// 위험률 CSV 파일을 불러옵니다',
+    ],
+    [ModuleType.SelectRiskRates]: [
+      '// 가입연령(ageCol)·성별(genderCol)로 위험률 행을 선택합니다',
+      '// 열 이름 변경: 출력열이름 = 원본열이름',
+    ],
+    [ModuleType.SelectData]: [
+      '// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)',
+    ],
+    [ModuleType.RateModifier]: [
+      '// 이자계수를 계산합니다',
+      '// i_prem: 보험료 이자계수 (납입 시점 현가 계수)',
+      '// i_claim: 급부 이자계수 (지급 시점 현가 계수)',
+    ],
+    [ModuleType.CalculateSurvivors]: [
+      '// lx(위험률): 나이별 생존자수  [초기값 lx[0] = 100,000]',
+      '//   lx[t] = lx[t-1] × (1 - 위험률[t])',
+      '//   다중감소 예: lx(사망률, 해약률)',
+      '// Dx: 할인 생존자수 = lx × i_prem',
+    ],
+    [ModuleType.ClaimsCalculator]: [
+      '// dx: 나이별 사망자수 = lx × 사망위험률',
+      '// Cx: 할인 사망자수 = dx × i_claim',
+    ],
+    [ModuleType.NxMxCalculator]: [
+      '// cumsum_rev(Dx): 역방향 누적합 — 각 나이부터 만기까지의 Dx 합계',
+      '//   Nx[t] = Dx[t] + Dx[t+1] + ... + Dx[만기]',
+      '//   Nx: 보험료 납입연금 현가 / Mx: 사망급부 현가 계산에 사용',
+      '// 공제(대기기간) 옵션: cumsum_rev(Cx, deduct=0.25)  ← 25% 공제(3개월 대기)',
+    ],
+    [ModuleType.PremiumComponent]: [
+      '// NNX = Nx[0] - Nx[m]',
+      '//   생성변수: NNX(Year), NNX(Half), NNX(Quarter), NNX(Month)',
+      '// BPV = (Mx[0] - Mx[n]) × 보험가입금액  (Benefit Present Value)',
+    ],
+    [ModuleType.AdditionalName]: [
+      '// 영업보험료 계산용 사업비 계수 (0이면 사업비 없음)',
+      '// α1, α2: 신계약비율  /  β1, β2: 유지비율  /  γ: 수금비율',
+    ],
+    [ModuleType.NetPremiumCalculator]: [
+      '// 순보험료 PP = 급부현가(BPV) ÷ 보험료현가(NNX)',
+      '//   수지상등 원칙: 미래 급부현가 = 미래 보험료현가',
+    ],
+    [ModuleType.GrossPremiumCalculator]: [
+      '// 영업보험료 GP = 순보험료 PP ÷ (1 - 사업비율)',
+    ],
+    [ModuleType.ReserveCalculator]: [
+      '// 순보험료식 책임준비금: V[t] = 미래급부현가 - 미래보험료현가 (t 시점 기준)',
+      '// V[t<=m]: 납입기간 중  /  V[t>m]: 납입 완료 후',
+    ],
   };
 
   for (const type of order) {
@@ -538,6 +659,11 @@ export function generateDSL(
     const label = LABELS[type] ?? type;
 
     lines.push(`## ${label}`);
+    // 모듈별 한글 설명 주석 삽입
+    const moduleComments = MODULE_COMMENTS[type];
+    if (moduleComments) {
+      for (const c of moduleComments) lines.push(c);
+    }
 
     switch (type) {
       case ModuleType.LoadData:
@@ -603,33 +729,41 @@ export function generateDSL(
       case ModuleType.NxMxCalculator:
         if (Array.isArray(par.nxCalculations)) {
           for (const c of par.nxCalculations) {
-            lines.push(`Nx_${c.name} = sum(${c.baseColumn})`);
+            lines.push(`Nx_${c.name} = cumsum_rev(${c.baseColumn})`);
           }
         }
         if (Array.isArray(par.mxCalculations)) {
           for (const c of par.mxCalculations) {
-            lines.push(`Mx_${c.name} = sum(${c.baseColumn})`);
+            // deductibleType이 '0'이 아니면 deduct 파라미터 포함
+            const deductSuffix = (c.deductibleType && c.deductibleType !== '0')
+              ? `, deduct=${c.deductibleType === 'custom' ? (c.customDeductible ?? 0) : c.deductibleType}`
+              : '';
+            lines.push(`Mx_${c.name} = cumsum_rev(${c.baseColumn}${deductSuffix})`);
           }
         }
         if (!par.nxCalculations?.length && !par.mxCalculations?.length) {
-          lines.push(`Nx = sum(Dx_Mortality)`);
-          lines.push(`Mx = sum(Cx_Mortality)`);
+          lines.push(`Nx = cumsum_rev(Dx_Mortality)`);
+          lines.push(`Mx = cumsum_rev(Cx_Mortality)`);
         }
         break;
 
       case ModuleType.PremiumComponent:
-        if (Array.isArray(par.nnxCalculations)) {
+        if (Array.isArray(par.nnxCalculations) && par.nnxCalculations.length > 0) {
           for (const c of par.nnxCalculations) {
-            lines.push(`NNX = ${c.nxColumn}[0] - ${c.nxColumn}[m]`);
+            const baseName = c.nxColumn.replace(/^Nx_/, '');
+            lines.push(`NNX_${baseName} = ${c.nxColumn}[0] - ${c.nxColumn}[m]`);
           }
+        } else {
+          lines.push(`NNX_Mortality = Nx_Mortality[0] - Nx_Mortality[m]`);
         }
-        if (Array.isArray(par.sumxCalculations)) {
+        if (Array.isArray(par.sumxCalculations) && par.sumxCalculations.length > 0) {
           for (const c of par.sumxCalculations) {
-            lines.push(`SUMX = ${c.mxColumn}[0] * ${c.amount ?? 10000}`);
+            const bpvBase = c.mxColumn.replace(/^Mx_/, '');
+            lines.push(`BPV_${bpvBase} = (${c.mxColumn}[0] - ${c.mxColumn}[n]) * ${c.amount ?? 10000}`);
           }
+        } else {
+          lines.push(`BPV_Mortality = (Mx_Mortality[0] - Mx_Mortality[n]) * 10000`);
         }
-        if (!par.nnxCalculations?.length) lines.push(`NNX  = Nx_Mortality[0] - Nx_Mortality[m]`);
-        if (!par.sumxCalculations?.length) lines.push(`SUMX = Mx_Mortality[0] * 10000`);
         break;
 
       case ModuleType.AdditionalName:
@@ -641,7 +775,7 @@ export function generateDSL(
         break;
 
       case ModuleType.NetPremiumCalculator:
-        lines.push(`${par.variableName ?? 'PP'} = ${stripVarBrackets(par.formula || 'SUMX / NNX')}`);
+        lines.push(`${par.variableName ?? 'PP'} = ${stripVarBrackets(par.formula || 'BPV_Mortality / NNX_Mortality(Year)')}`);
         break;
 
       case ModuleType.GrossPremiumCalculator:
@@ -683,18 +817,40 @@ export interface DSLFlowError {
 export function extractFormulaVarRefs(formula: string): string[] {
   const refs = new Set<string>();
 
-  // [VarName] 괄호 표기에서 추출 (숫자 인덱스 제외)
-  for (const m of formula.matchAll(/\[([A-Za-z_α-ωΑ-Ω][A-Za-z0-9_α-ωΑ-Ω]*)\]/g)) {
+  // 수식 함수/예약어 및 NNX 주기 접미사
+  const SKIP = new Set(['sum', 'cumsum_rev', 'lx', 'abs', 'min', 'max', 'if', 'and', 'or', 'not', 'true', 'false',
+                        'Year', 'Half', 'Quarter', 'Month']);
+
+  // [VarName] 또는 [VarName(suffix)] 괄호 표기에서 추출
+  // NNX_Mortality(Year) 같은 접미사 포함 토큰도 단일 ref로 추출
+  for (const m of formula.matchAll(/\[([A-Za-z_α-ωΑ-Ω][A-Za-z0-9_α-ωΑ-Ω]*(?:\([^)]*\))?)\]/g)) {
     refs.add(m[1]);
   }
 
   // 일반 식별자 추출 (대괄호 안 내용 제거 후)
   const cleaned = formula.replace(/\[[^\]]*\]/g, '');
-  const tokens = cleaned.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
-  // 수식 함수/예약어 제외
-  const SKIP = new Set(['sum', 'lx', 'sum', 'abs', 'min', 'max', 'if', 'and', 'or', 'not', 'true', 'false']);
+  // Identifier(suffix) 형태 포함 추출
+  const tokens = cleaned.match(/[A-Za-z_][A-Za-z0-9_]*(?:\([^)]*\))?/g) ?? [];
+
   for (const t of tokens) {
-    if (!SKIP.has(t.toLowerCase())) refs.add(t);
+    const parenIdx = t.indexOf('(');
+    if (parenIdx > 0) {
+      const baseName = t.slice(0, parenIdx);
+      if (SKIP.has(baseName) || SKIP.has(baseName.toLowerCase())) {
+        // 함수 호출: cumsum_rev(Dx_Mortality), lx(Death_Rate) 등
+        // 함수명은 건너뛰고 인자 안의 식별자를 추출
+        const inner = t.slice(parenIdx + 1, t.length - 1);
+        const innerTokens = inner.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
+        for (const it of innerTokens) {
+          if (!SKIP.has(it) && !SKIP.has(it.toLowerCase())) refs.add(it);
+        }
+      } else {
+        // NNX_Mortality(Year) 같이 접미사가 있는 변수 — 전체를 단일 ref로
+        if (!SKIP.has(t) && !SKIP.has(t.toLowerCase())) refs.add(t);
+      }
+    } else {
+      if (!SKIP.has(t) && !SKIP.has(t.toLowerCase())) refs.add(t);
+    }
   }
 
   return Array.from(refs);
@@ -736,7 +892,7 @@ export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
     [ModuleType.CalculateSurvivors]: '생존자 계산',
     [ModuleType.ClaimsCalculator]: '클레임 계산',
     [ModuleType.NxMxCalculator]: 'NxMx 계산',
-    [ModuleType.PremiumComponent]: 'NNX MMX 계산',
+    [ModuleType.PremiumComponent]: 'Premium Component',
     [ModuleType.AdditionalName]: '추가 변수',
     [ModuleType.NetPremiumCalculator]: '순보험료',
     [ModuleType.GrossPremiumCalculator]: '영업보험료',
@@ -771,7 +927,18 @@ export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
           }
         }
       }
-      if (output) defined.add(output);
+      if (output) {
+        defined.add(output);
+        // PremiumComponent: NNX_X 정의 시 실행엔진이 생성하는 4가지 변수를 모두 등록
+        if (section.type === ModuleType.PremiumComponent) {
+          if (/^NNX_/i.test(output)) {
+            ['Year', 'Half', 'Quarter', 'Month'].forEach(freq =>
+              defined.add(`${output}(${freq})`)
+            );
+          }
+          // BPV_X 도 그대로 등록 (이미 위에서 add됨)
+        }
+      }
     }
   }
 
@@ -782,36 +949,54 @@ export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
 export const EXAMPLE_DSL = `# 종신보험 A형 | age=40 | sex=Male | pay=20 | rate=2.5
 
 ## LoadData
+// 위험률 CSV 파일을 불러옵니다
 file = Risk_Rates.csv
 
+## SelectData
+// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)
+// 위험률 파일을 불러오면 열 선택 버튼으로 추가하세요
+Age = Age
+Sex = Sex
+
 ## SelectRiskRates
+// 가입연령(ageCol)·성별(genderCol)로 위험률 행을 선택합니다
+// 열 이름 변경: 출력열이름 = 원본열이름
 ageCol    = Age
 genderCol = Sex
-Death_Rate = Male_Mortality     // 입력열 → 출력열 이름 변경
-
-## SelectData
-Age        = Age
-Death_Rate = Death_Rate
-i_prem     = i_prem
-i_claim    = i_claim
+Death_Rate = Male_Mortality
 
 ## CalculateSurvivors
-lx_Mortality = lx(Death_Rate)   // 사망률 열로 lx 계산
+// lx(위험률): 나이별 생존자수  [초기값 lx[0] = 100,000]
+//   lx[t] = lx[t-1] × (1 - 위험률[t])
+//   다중감소 예: lx(사망률, 해약률)
+// Dx: 할인 생존자수 = lx × i_prem
+lx_Mortality = lx(Death_Rate)
 Dx_Mortality = lx_Mortality * i_prem
 
 ## ClaimsCalculator
+// dx: 나이별 사망자수 = lx × 사망위험률
+// Cx: 할인 사망자수 = dx × i_claim
 dx_Mortality = lx_Mortality * Death_Rate
 Cx_Mortality = dx_Mortality * i_claim
 
 ## NxMxCalculator
-Nx_Mortality = sum(Dx_Mortality)   // 역누적합
-Mx_Mortality = sum(Cx_Mortality)
+// cumsum_rev(Dx): 역방향 누적합 — 각 나이부터 만기까지의 Dx 합계
+//   Nx[t] = Dx[t] + Dx[t+1] + ... + Dx[만기]
+//   Nx: 보험료 납입연금 현가 / Mx: 사망급부 현가 계산에 사용
+// 공제(대기기간) 옵션: cumsum_rev(Cx, deduct=0.25)  ← 25% 공제(3개월 대기)
+Nx_Mortality = cumsum_rev(Dx_Mortality)
+Mx_Mortality = cumsum_rev(Cx_Mortality)
 
 ## PremiumComponent
-NNX  = Nx_Mortality[0] - Nx_Mortality[m]  // m = 납입기간
-SUMX = Mx_Mortality[0] * 10000            // 급부액 10,000원
+// NNX = Nx[0] - Nx[m]
+//   생성변수: NNX(Year), NNX(Half), NNX(Quarter), NNX(Month)
+// BPV = (Mx[0] - Mx[n]) × 보험가입금액  (Benefit Present Value)
+NNX_Mortality = Nx_Mortality[0] - Nx_Mortality[m]
+BPV_Mortality = (Mx_Mortality[0] - Mx_Mortality[n]) * 10000
 
 ## AdditionalName
+// 영업보험료 계산용 사업비 계수 (0이면 사업비 없음)
+// α1, α2: 신계약비율  /  β1, β2: 유지비율  /  γ: 수금비율
 α1 = 0
 α2 = 0
 β1 = 0
@@ -819,12 +1004,17 @@ SUMX = Mx_Mortality[0] * 10000            // 급부액 10,000원
 γ  = 0
 
 ## NetPremiumCalculator
-PP = SUMX / NNX
+// 순보험료 PP = 급부현가(BPV_Mortality) ÷ 보험료현가(NNX_Mortality(Year))
+//   수지상등 원칙: 미래 급부현가 = 미래 보험료현가
+PP = BPV_Mortality / NNX_Mortality(Year)
 
 ## GrossPremiumCalculator
+// 영업보험료 GP = 순보험료 PP ÷ (1 - 사업비율)
 GP = PP / (1 - α1 - α2)
 
 ## ReserveCalculator
+// 순보험료식 책임준비금: V[t] = 미래급부현가 - 미래보험료현가 (t 시점 기준)
+// V[t<=m]: 납입기간 중  /  V[t>m]: 납입 완료 후
 V[t<=m] = (Mx_Mortality[t] - Mx_Mortality[n]) / lx_Mortality[t] - GP * (Nx_Mortality[t] - Nx_Mortality[m]) / lx_Mortality[t]
 V[t>m]  = (Mx_Mortality[t] - Mx_Mortality[n]) / lx_Mortality[t]
 `.trim();

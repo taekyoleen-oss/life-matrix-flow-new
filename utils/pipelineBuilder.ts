@@ -12,8 +12,8 @@ const NON_CHAIN_TYPES = new Set<ModuleType>([
 // ── 가로 배치 순서 (DefinePolicyInfo 제외한 메인 체인)
 const LAYOUT_CHAIN: ModuleType[] = [
   ModuleType.LoadData,
-  ModuleType.SelectRiskRates,
   ModuleType.SelectData,
+  ModuleType.SelectRiskRates,
   ModuleType.RateModifier,
   ModuleType.CalculateSurvivors,
   ModuleType.ClaimsCalculator,
@@ -134,7 +134,7 @@ const DISPLAY_NAMES: Partial<Record<ModuleType, string>> = {
   [ModuleType.CalculateSurvivors]: 'Survivors Calculator',
   [ModuleType.ClaimsCalculator]: 'Claims Calculator',
   [ModuleType.NxMxCalculator]: 'Nx Mx Calculator',
-  [ModuleType.PremiumComponent]: 'NNX MMX Calculator',
+  [ModuleType.PremiumComponent]: 'Premium Component',
   [ModuleType.AdditionalName]: 'Additional Variables',
   [ModuleType.NetPremiumCalculator]: 'Net Premium Calculator',
   [ModuleType.GrossPremiumCalculator]: 'Gross Premium Calculator',

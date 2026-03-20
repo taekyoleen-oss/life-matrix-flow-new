@@ -229,10 +229,11 @@ export interface PCAOutput {
 
 export interface PremiumComponentOutput {
   type: "PremiumComponentOutput";
-  nnxResults: Record<string, number>;
-  mmxValue: number; // Changed from sumxValue to mmxValue
-  mxResults: Record<string, number>;
-  data?: DataPreview; // Table data with NNX and MMX columns added
+  nnxResults: Record<string, number>;  // { "NNX_Mortality(Year)": value, ... }
+  bpvResults: Record<string, number>;  // { "BPV_Mortality": value, ... }
+  mmxValue: number; // total BPV scalar (backward compat)
+  mxResults: Record<string, number>;   // { "Mortality": value, ... }
+  data?: DataPreview; // Table data with NNX and BPV columns added
 }
 
 export interface AdditionalVariablesOutput {

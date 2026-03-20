@@ -220,7 +220,7 @@ print(df_risk[['i_prem', 'i_claim']].head())`;
         if (c.mxColumn) {
           premCompCode += `Mx_start = df.iloc[0]['${c.mxColumn}']\n`;
           premCompCode += `Mx_end = df.iloc[policy_term]['${c.mxColumn}'] if policy_term < len(df) else 0\n`;
-          premCompCode += `SUMX_${c.mxColumn.replace("Mx_", "")} = ${
+          premCompCode += `BPV_${c.mxColumn.replace("Mx_", "")} = ${
             c.amount || 0
           } * (Mx_start - Mx_end)\n`;
         }
@@ -231,7 +231,7 @@ print(df_risk[['i_prem', 'i_claim']].head())`;
       return `# Net Premium Calculator
 formula = "${parameters.formula || ""}"
 # Replace [Tokens] with variable values
-# Example: [SUMX] / [NNX_Mortality]
+# Example: [BPV] / [NNX_Mortality]
 # net_premium = eval(processed_formula, {}, context)
 print(f"Formula: {formula}")
 # print(f"Net Premium: {net_premium}")`;

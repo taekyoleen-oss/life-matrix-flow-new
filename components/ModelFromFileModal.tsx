@@ -126,7 +126,7 @@ const TEMPLATE_MARKDOWN = `# Life Matrix Flow 모델 정의 템플릿
 \`\`\`json
 []
 \`\`\`
-**SUMX 계산 목록**:
+**BPV 계산 목록**:
 \`\`\`json
 []
 \`\`\`
@@ -154,7 +154,7 @@ const TEMPLATE_MARKDOWN = `# Life Matrix Flow 모델 정의 템플릿
 
 ## [11] 순보험료 계산 (NetPremiumCalculator)
 **포함여부**: yes
-**수식**: [SUMX] / [NNX]
+**수식**: [BPV] / [NNX]
 **변수명**: PP
 
 ---

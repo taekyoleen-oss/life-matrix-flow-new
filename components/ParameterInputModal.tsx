@@ -20,6 +20,7 @@ import { XCircleIcon, XMarkIcon, PlayIcon, BookmarkIcon } from "./icons";
 import { saveModuleDefault, loadModuleDefault } from "../utils/moduleDefaults";
 import { SAMPLE_DATA } from "../sampleData";
 import { ExcelInputModal } from "./ExcelInputModal";
+import { generateDSL, extractModuleSection } from "../utils/dslParser";
 
 // Dynamic import for xlsx to handle module resolution issues
 let XLSX: any = null;
@@ -39,6 +40,7 @@ interface ParameterInputModalProps {
   projectName: string;
   folderHandle: FileSystemDirectoryHandle | null;
   onRunModule?: (id: string) => Promise<void>;
+  onModuleSaved?: (moduleType: ModuleType, params: Record<string, any>) => void;
 }
 
 export const PropertyInput: React.FC<{
@@ -585,7 +587,7 @@ const NetPremiumCalculatorParams: React.FC<{
               Object.keys(premiumComponents.nnxResults).includes(key)
             ) {
               colorClass = "bg-blue-600 text-white";
-            } else if (key === "MMX" || key === "SUMX") {
+            } else if (key === "MMX" || key === "SUMX" || key === "BPV") {
               colorClass = "bg-green-600 text-white";
             } else if (key === "PP" || key === variableName) {
               colorClass = "bg-green-600 text-white";
@@ -652,7 +654,7 @@ const NetPremiumCalculatorParams: React.FC<{
             {premiumComponents && (
               <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
-                  NNX MMX Calculator Variables
+                  Premium Component Variables
                 </label>
                 <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto panel-scrollbar">
                   {Object.keys(premiumComponents.nnxResults).map((k) => (
@@ -665,13 +667,28 @@ const NetPremiumCalculatorParams: React.FC<{
                       {k}
                     </button>
                   ))}
-                  <button
-                    onClick={() => insertToken("[MMX]")}
-                    className="bg-green-600 hover:bg-green-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
-                    title="Insert [MMX]"
-                  >
-                    MMX
-                  </button>
+                  {/* BPV variables: BPV_Mortality, BPV_CI, etc. */}
+                  {Object.keys(premiumComponents.bpvResults ?? {}).length > 0
+                    ? Object.keys(premiumComponents.bpvResults!).map((k) => (
+                        <button
+                          key={k}
+                          onClick={() => insertToken(`[${k}]`)}
+                          className="bg-green-600 hover:bg-green-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
+                          title={`Insert [${k}]`}
+                        >
+                          {k}
+                        </button>
+                      ))
+                    : (
+                        <button
+                          onClick={() => insertToken("[BPV]")}
+                          className="bg-green-600 hover:bg-green-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
+                          title="Insert [BPV]"
+                        >
+                          BPV
+                        </button>
+                      )
+                  }
                   {/* Add PP (Net Premium) if available from previous execution */}
                   {(() => {
                     const currentModule = allModules.find(
@@ -913,9 +930,11 @@ const GrossPremiumCalculatorParams: React.FC<{
           vars.push(k);
         }
       });
-      // MMX
-      if (netPremiumOutput.variables["MMX"] !== undefined) {
-        vars.push("MMX");
+      // BPV (Benefit Present Value) — formerly MMX/SUMX
+      if (netPremiumOutput.variables["BPV"] !== undefined) {
+        vars.push("BPV");
+      } else if (netPremiumOutput.variables["MMX"] !== undefined) {
+        vars.push("MMX"); // backward compat
       }
       // PP (Net Premium result)
       const ppName =
@@ -924,7 +943,9 @@ const GrossPremiumCalculatorParams: React.FC<{
           : Object.keys(netPremiumOutput.variables).find(
               (k) =>
                 !k.startsWith("NNX_") &&
+                k !== "BPV" &&
                 k !== "MMX" &&
+                k !== "SUMX" &&
                 k !== "m" &&
                 k !== "n" &&
                 !additionalVars?.[k]
@@ -945,7 +966,9 @@ const GrossPremiumCalculatorParams: React.FC<{
       return Object.keys(netPremiumOutput.variables).filter(
         (k) =>
           !k.startsWith("NNX_") &&
+          k !== "BPV" &&
           k !== "MMX" &&
+          k !== "SUMX" &&
           k !== "PP" &&
           k !== "m" &&
           k !== "n"
@@ -1076,7 +1099,7 @@ const GrossPremiumCalculatorParams: React.FC<{
             {premiumComponentVars.length > 0 && (
               <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
-                  NNX MMX Calculator Variables
+                  Premium Component Variables
                 </label>
                 <div className="flex flex-wrap gap-1.5 max-h-[200px] overflow-y-auto panel-scrollbar">
                   {premiumComponentVars.map((k) => (
@@ -1084,7 +1107,7 @@ const GrossPremiumCalculatorParams: React.FC<{
                       key={k}
                       onClick={() => insertToken(`[${k}]`)}
                       className={
-                        k === "MMX" || k === "PP" || k === variableName
+                        k === "BPV" || k === "MMX" || k === "PP" || k === variableName
                           ? "bg-green-600 hover:bg-green-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
                           : "bg-blue-600 hover:bg-blue-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
                       }
@@ -1209,7 +1232,7 @@ const AdditionalNameParams: React.FC<{
 }) => {
   const { definitions = [], basicValues = [] } = parameters;
 
-  // Get data from NNX MMX Calculator output
+  // Get data from Premium Component output
   const premiumComponents = getConnectedPremiumComponents(
     moduleId,
     "premium_components_in",
@@ -1326,7 +1349,7 @@ const AdditionalNameParams: React.FC<{
   if (!dataSource)
     return (
       <p className="text-sm text-gray-500">
-        Connect 'NNX MMX Calculator' to enable variable lookup.
+        Connect 'Premium Component' to enable variable lookup.
       </p>
     );
 
@@ -1729,12 +1752,15 @@ const SelectDataParams: React.FC<{
     const existingSelectionMap = new Map(
       existingSelections.map((s: any) => [s.originalName, s])
     );
+    // 기존 selections이 있으면(DSL에서 명시된 경우) 새 열은 미선택 기본값
+    // 기존 selections이 없으면(처음 생성) 모두 선택 기본값
+    const defaultSelected = existingSelections.length === 0;
 
     return inputColumns.map((colName) => {
       if (existingSelectionMap.has(colName)) {
         return existingSelectionMap.get(colName) as SelectionItem;
       }
-      return { originalName: colName, selected: true, newName: colName };
+      return { originalName: colName, selected: defaultSelected, newName: colName };
     });
   });
 
@@ -1743,13 +1769,14 @@ const SelectDataParams: React.FC<{
     const existingSelectionMap = new Map(
       existingSelections.map((s: any) => [s.originalName, s])
     );
+    const defaultSelected = existingSelections.length === 0;
 
     const newSelections: SelectionItem[] = inputColumns.map((colName) => {
       const existing = existingSelectionMap.get(colName);
       if (existing) {
         return existing as SelectionItem;
       }
-      return { originalName: colName, selected: true, newName: colName };
+      return { originalName: colName, selected: defaultSelected, newName: colName };
     });
 
     if (JSON.stringify(newSelections) !== JSON.stringify(selections)) {
@@ -1963,9 +1990,13 @@ const ReserveCalculatorParams: React.FC<{
           vars.push(k);
         }
       });
-      // MMX (variable, not table column MMX_Col)
-      if (grossPremiumVars["MMX"] !== undefined) {
-        vars.push("MMX");
+      // BPV (variable, not table column BPV_Col)
+      if (grossPremiumVars["BPV_Mortality"] !== undefined) {
+        vars.push("BPV_Mortality");
+      } else if (grossPremiumVars["BPV"] !== undefined) {
+        vars.push("BPV");
+      } else if (grossPremiumVars["MMX"] !== undefined) {
+        vars.push("MMX"); // backward compat
       }
       // PP (Net Premium result) - exclude if it ends with _Col
       const ppName =
@@ -1974,7 +2005,10 @@ const ReserveCalculatorParams: React.FC<{
           : Object.keys(grossPremiumVars).find(
               (k) =>
                 !k.startsWith("NNX_") &&
+                k !== "BPV" &&
+                k !== "BPV_Mortality" &&
                 k !== "MMX" &&
+                k !== "BPV_Col" &&
                 k !== "MMX_Col" &&
                 k !== "GP" &&
                 k !== "m" &&
@@ -2151,7 +2185,7 @@ const ReserveCalculatorParams: React.FC<{
                       key={k}
                       onClick={() => insertToken(`[${k}]`, activeFormula)}
                       className={
-                        k === "MMX" || k === "PP" || k === "GP"
+                        k === "BPV_Mortality" || k === "BPV" || k === "MMX" || k === "PP" || k === "GP"
                           ? "bg-green-600 hover:bg-green-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
                           : "bg-blue-600 hover:bg-blue-500 text-xs font-mono px-2.5 py-1.5 rounded-md transition-colors shadow-sm border border-white/10"
                       }
@@ -3680,7 +3714,7 @@ const PremiumComponentParams: React.FC<{
     }
   }, [nxColumns.join(",")]);
 
-  // Auto-populate SUMX calculations from Mx columns
+  // Auto-populate BPV calculations from Mx columns
   // Sync sumxCalculations to match mxColumns exactly (1 Mx = 1 calculation)
   useEffect(() => {
     if (mxColumns.length > 0) {
@@ -3830,7 +3864,7 @@ const PremiumComponentParams: React.FC<{
 
       <div>
         <h4 className="text-xs text-gray-400 font-bold mb-2">
-          MMX Components (Benefit Factors)
+          BPV Components (Benefit Present Value)
         </h4>
         <div className="space-y-2">
           {sumxCalculations.map((calc: any) => (
@@ -3866,7 +3900,7 @@ const PremiumComponentParams: React.FC<{
             onClick={() => handleAdd("sumxCalculations")}
             className="w-full px-3 py-1.5 text-xs bg-blue-600/80 hover:bg-blue-600 rounded-md"
           >
-            Add MMX
+            Add BPV
           </button>
         </div>
       </div>
@@ -4158,6 +4192,7 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
   projectName,
   folderHandle,
   onRunModule,
+  onModuleSaved,
 }) => {
   const [isRunning, setIsRunning] = React.useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
@@ -4222,6 +4257,8 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
     // 현재 모듈의 parameters를 해당 모듈 타입의 기본값으로 저장
     saveModuleDefault(module.type, module.parameters);
     initialParametersRef.current = JSON.parse(JSON.stringify(module.parameters));
+    // DSL 드래프트의 해당 섹션을 현재 파라미터 기준으로 동기화
+    onModuleSaved?.(module.type, module.parameters);
   };
 
   const handleClose = () => {
@@ -4317,6 +4354,22 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
         </header>
         <main className="flex-grow p-4 overflow-auto custom-scrollbar">
           {renderContent()}
+          {(() => {
+            const fullDSL = generateDSL(projectName, modules);
+            const section = extractModuleSection(fullDSL, module.type);
+            if (!section) return null;
+            return (
+              <div className="mt-4 border-t border-gray-700 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-purple-300">DSL 섹션</span>
+                  <span className="text-[10px] text-gray-500">저장 시 DSL 편집기에 반영됩니다</span>
+                </div>
+                <pre className="bg-gray-900 border border-gray-700 rounded p-3 text-xs text-green-300 font-mono whitespace-pre overflow-x-auto max-h-60 custom-scrollbar">
+                  {section}
+                </pre>
+              </div>
+            );
+          })()}
         </main>
       </div>
 

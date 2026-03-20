@@ -12,6 +12,7 @@ import {
   EXAMPLE_DSL,
 } from '../utils/dslParser';
 import { buildPipelineFromModel } from '../utils/pipelineBuilder';
+import { SAMPLE_DATA } from '../sampleData';
 
 interface PipelineDSLModalProps {
   isOpen: boolean;
@@ -24,8 +25,8 @@ interface PipelineDSLModalProps {
 
 const MODULE_ORDER = [
   ModuleType.LoadData,
-  ModuleType.SelectRiskRates,
   ModuleType.SelectData,
+  ModuleType.SelectRiskRates,
   ModuleType.RateModifier,
   ModuleType.CalculateSurvivors,
   ModuleType.ClaimsCalculator,
@@ -46,7 +47,7 @@ const MODULE_LABELS: Partial<Record<ModuleType, string>> = {
   [ModuleType.CalculateSurvivors]: '생존자 계산',
   [ModuleType.ClaimsCalculator]: '클레임 계산',
   [ModuleType.NxMxCalculator]: 'NxMx 계산',
-  [ModuleType.PremiumComponent]: 'NNX MMX 계산',
+  [ModuleType.PremiumComponent]: 'Premium Component',
   [ModuleType.AdditionalName]: '추가 변수',
   [ModuleType.NetPremiumCalculator]: '순보험료',
   [ModuleType.GrossPremiumCalculator]: '영업보험료',
@@ -54,10 +55,85 @@ const MODULE_LABELS: Partial<Record<ModuleType, string>> = {
   [ModuleType.ScenarioRunner]: '시나리오',
 };
 
-// ── localStorage 키
-const DRAFT_KEY    = 'lmf_dsl_draft';
-const SAVES_KEY    = 'lmf_dsl_saves';
-const EXAMPLES_KEY = 'lmf_dsl_examples';
+// 각 모듈의 계리적 수식 설명 (우측 패널 표시용)
+const MODULE_DESCRIPTIONS: Partial<Record<ModuleType, { desc: string; formulas: string[] }>> = {
+  [ModuleType.LoadData]: {
+    desc: '위험률 CSV 파일을 불러옵니다',
+    formulas: [],
+  },
+  [ModuleType.SelectRiskRates]: {
+    desc: '가입연령·성별로 위험률 행을 선택합니다',
+    formulas: [],
+  },
+  [ModuleType.SelectData]: {
+    desc: '계산에 필요한 열만 선택·이름 변경합니다',
+    formulas: [],
+  },
+  [ModuleType.RateModifier]: {
+    desc: '이자계수 등 파생 열을 계산합니다',
+    formulas: ['i_prem: 보험료 이자계수 (납입 시점 현가)', 'i_claim: 급부 이자계수 (지급 시점 현가)'],
+  },
+  [ModuleType.CalculateSurvivors]: {
+    desc: '나이별 생존자수(lx)와 할인 생존자수(Dx)를 계산합니다',
+    formulas: [
+      'lx(위험률): lx[t] = lx[t-1] × (1 - 위험률[t])',
+      '초기값 lx[0] = 100,000 / 다중감소: lx(사망률, 해약률)',
+      'Dx = lx × i_prem  (할인 생존자수)',
+    ],
+  },
+  [ModuleType.ClaimsCalculator]: {
+    desc: '나이별 사망자수(dx)와 할인 사망자수(Cx)를 계산합니다',
+    formulas: [
+      'dx = lx × 사망위험률  (나이별 사망자수)',
+      'Cx = dx × i_claim  (할인 사망자수)',
+    ],
+  },
+  [ModuleType.NxMxCalculator]: {
+    desc: '각 나이부터 만기까지의 역방향 누적합을 계산합니다',
+    formulas: [
+      'cumsum_rev(Dx): Nx[t] = Dx[t] + Dx[t+1] + ... + Dx[만기]',
+      'Nx: 보험료 납입연금 현가 계산에 사용',
+      'cumsum_rev(Cx): Mx[t] = Cx[t] + Cx[t+1] + ... + Cx[만기]',
+      'Mx: 사망급부 현가 계산에 사용',
+      '공제 옵션: cumsum_rev(Cx, deduct=0.25)  ← 3개월 대기기간',
+    ],
+  },
+  [ModuleType.PremiumComponent]: {
+    desc: '보험료·급부 현가 구성 요소를 계산합니다',
+    formulas: [
+      'NNX = Nx[0] - Nx[m]  (납입기간 보험료 납입연금 현가)',
+      '[0] = 가입 시점, [m] = 납입 만료 시점',
+      'BPV = (Mx[0] - Mx[n]) × 보험가입금액  (Benefit Present Value)',
+      '생성 변수: NNX_[열이름](Year/Half/Quarter/Month), BPV_[열이름]',
+    ],
+  },
+  [ModuleType.AdditionalName]: {
+    desc: '영업보험료 계산용 사업비 계수를 정의합니다',
+    formulas: ['α1, α2: 신계약비율', 'β1, β2: 유지비율', 'γ: 수금비율'],
+  },
+  [ModuleType.NetPremiumCalculator]: {
+    desc: '순보험료를 계산합니다 (수지상등 원칙)',
+    formulas: ['PP = BPV_Mortality ÷ NNX_Mortality(Year)  (급부현가 ÷ 보험료현가)'],
+  },
+  [ModuleType.GrossPremiumCalculator]: {
+    desc: '영업보험료를 계산합니다',
+    formulas: ['GP = PP ÷ (1 - 사업비율)', '사업비율 = α1 + α2 (신계약비) + β (유지비)'],
+  },
+  [ModuleType.ReserveCalculator]: {
+    desc: '순보험료식 책임준비금을 계산합니다',
+    formulas: [
+      'V[t] = 미래급부현가 - 미래보험료현가 (t 시점)',
+      'V[t<=m]: 납입기간 중  /  V[t>m]: 납입 완료 후',
+    ],
+  },
+};
+
+// ── localStorage / sessionStorage 키
+const DRAFT_KEY        = 'lmf_dsl_draft';
+const SAVES_KEY        = 'lmf_dsl_saves';
+const EXAMPLES_KEY     = 'lmf_dsl_examples';
+const FILE_META_KEY    = 'lmf_dsl_file_meta';    // sessionStorage: 파일 메타 (이름·행·열)
+const FILE_CONTENT_KEY = 'lmf_dsl_file_content'; // sessionStorage: 실제 CSV 내용
 
 interface SavedEntry { text: string; savedAt: string; }
 
@@ -89,7 +165,7 @@ function validateDSL(model: DSLModel): ValidationResult {
     switch (s.type) {
       case ModuleType.NetPremiumCalculator:
         if (s.lines.length === 0)
-          errors.push('[순보험료] 수식이 없습니다. 예: PP = SUMX / NNX');
+          errors.push('[순보험료] 수식이 없습니다. 예: PP = BPV_Mortality / NNX_Mortality(Year)');
         break;
       case ModuleType.GrossPremiumCalculator:
         if (s.lines.length === 0)
@@ -109,14 +185,14 @@ function validateDSL(model: DSLModel): ValidationResult {
         break;
       case ModuleType.NxMxCalculator:
         if (!s.lines.some((l) => l.output.toLowerCase().startsWith('nx')))
-          warnings.push('[NxMx 계산] Nx 정의가 없습니다. 예: Nx_Mortality = sum(Dx_Mortality)');
+          warnings.push('[NxMx 계산] Nx 정의가 없습니다. 예: Nx_Mortality = cumsum_rev(Dx_Mortality)');
         break;
     }
   }
 
   // 순보험료가 있는데 전제 모듈이 없는 경우
   if (types.has(ModuleType.NetPremiumCalculator) && !types.has(ModuleType.PremiumComponent))
-    warnings.push('[순보험료] NNX/MMX 계산 모듈이 없어 SUMX/NNX 값을 참조할 수 없습니다.');
+    warnings.push('[순보험료] Premium Component 모듈이 없어 BPV/NNX 값을 참조할 수 없습니다.');
 
   // Policy 파라미터 검증
   if (!model.policyParams.entryAge || model.policyParams.entryAge <= 0)
@@ -127,6 +203,149 @@ function validateDSL(model: DSLModel): ValidationResult {
     warnings.push(`이율(rate) 값이 올바르지 않습니다 (현재: ${model.policyParams.interestRate}%)`);
 
   return { errors, warnings };
+}
+
+// ── 열 이름이 나이 컬럼인지 판별
+function isAgeCol(name: string): boolean {
+  const n = name.toLowerCase().replace(/[\s_\-]/g, '');
+  return n === 'age' || n === '나이' || n === '연령' || n === 'x';
+}
+// ── 열 이름이 성별 컬럼인지 판별
+function isSexCol(name: string): boolean {
+  const n = name.toLowerCase().replace(/[\s_\-]/g, '');
+  return n === 'sex' || n === 'gender' || n === '성별' || n === '성' || n === 'male' || n === 'female';
+}
+
+// ── CSV 헤더 파싱 (열 이름 + 행 수)
+function parseCSVMeta(text: string): { columns: string[]; rowCount: number } {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (lines.length === 0) return { columns: [], rowCount: 0 };
+  const sep = lines[0].includes('\t') ? '\t' : ',';
+  const columns = lines[0].split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
+  return { columns, rowCount: Math.max(0, lines.length - 1) };
+}
+
+// ── 불러온 파일 정보를 DSL 텍스트에 반영 (LoadData 파일명 + SelectData 열 목록 갱신)
+function applyFileToDSL(dslText: string, fileName: string, columns: string[]): string {
+  const lines = dslText.split('\n');
+  const out: string[] = [];
+  let sectionKey = '';
+  let inSelectData = false;
+  let selectDataInjected = false;
+  let selectDataFound = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const t = line.trim();
+
+    // 섹션 헤더 감지
+    if (t.startsWith('## ')) {
+      const key = t.replace(/^##\s*/, '').split('//')[0].trim()
+        .toLowerCase().replace(/[\s_\-]/g, '').replace(/calculator|module|모듈/g, '');
+      inSelectData = key === 'selectdata' || key === '데이터선택';
+      sectionKey = key;
+      if (inSelectData) selectDataFound = true;
+
+      out.push(line);
+
+      // SelectData 헤더 직후 새 열 목록 주입
+      // Age/Sex만 기본 선택, 나머지는 주석으로 추가 (열 선택 버튼으로 활성화 가능)
+      if (inSelectData && !selectDataInjected) {
+        out.push('// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)');
+        const defaultCols = columns.filter(c => isAgeCol(c) || isSexCol(c));
+        const otherCols   = columns.filter(c => !isAgeCol(c) && !isSexCol(c));
+        defaultCols.forEach(col => out.push(`${col} = ${col}`));
+        if (otherCols.length > 0) {
+          out.push('// 아래 열은 필요 시 주석 해제하거나 열 선택 버튼으로 추가하세요');
+          otherCols.forEach(col => out.push(`// ${col} = ${col}`));
+        }
+        selectDataInjected = true;
+      }
+      continue;
+    }
+
+    // SelectData 내부: 기존 줄 건너뜀 (위에서 새 내용 주입 완료)
+    if (inSelectData && selectDataInjected) {
+      if (t !== '') continue; // 빈 줄 아닌 기존 내용 스킵
+      out.push(line);         // 빈 줄(섹션 구분선)은 유지
+      continue;
+    }
+
+    // LoadData 내부: file = 줄 갱신
+    if ((sectionKey === 'loaddata' || sectionKey === 'load') && /^file\s*=/i.test(t)) {
+      out.push(`file = ${fileName}`);
+      continue;
+    }
+
+    out.push(line);
+  }
+
+  // SelectData 섹션이 없으면 LoadData 끝 이후에 삽입
+  if (!selectDataFound && columns.length > 0) {
+    let insertIdx = out.length;
+    let inLoad = false;
+    for (let i = 0; i < out.length; i++) {
+      const t = out[i].trim();
+      if (t.startsWith('## ')) {
+        const k = t.replace(/^##\s*/, '').split('//')[0].trim()
+          .toLowerCase().replace(/[\s_\-]/g, '').replace(/calculator|module|모듈/g, '');
+        if (k === 'loaddata' || k === 'load') { inLoad = true; continue; }
+        if (inLoad) { insertIdx = i; break; }
+      }
+    }
+    const defaultCols2 = columns.filter(c => isAgeCol(c) || isSexCol(c));
+    const otherCols2   = columns.filter(c => !isAgeCol(c) && !isSexCol(c));
+    out.splice(insertIdx, 0,
+      '',
+      '## SelectData',
+      '// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)',
+      ...defaultCols2.map(col => `${col} = ${col}`),
+      ...(otherCols2.length > 0 ? ['// 아래 열은 필요 시 주석 해제하거나 열 선택 버튼으로 추가하세요'] : []),
+      ...otherCols2.map(col => `// ${col} = ${col}`),
+      '',
+    );
+  }
+
+  return out.join('\n');
+}
+
+// ── SelectData DSL 섹션 갱신 (선택·순서 변경 반영)
+function applySelectDataToDSL(
+  dslText: string,
+  items: Array<{ originalName: string; newName: string; selected: boolean }>
+): string {
+  const lines = dslText.split('\n');
+  const out: string[] = [];
+  let inSelectData = false;
+  let injected = false;
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.startsWith('## ')) {
+      const key = t.replace(/^##\s*/, '').split('//')[0].trim()
+        .toLowerCase().replace(/[\s_\-]/g, '').replace(/calculator|module|모듈/g, '');
+      const wasIn = inSelectData;
+      inSelectData = key === 'selectdata' || key === '데이터선택';
+      if (inSelectData && !injected) {
+        out.push(line);
+        out.push('// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)');
+        for (const s of items) {
+          if (!s.selected) continue;
+          const lhs = s.newName && s.newName !== s.originalName ? s.newName : s.originalName;
+          out.push(`${lhs} = ${s.originalName}`);
+        }
+        injected = true;
+        continue;
+      }
+      if (wasIn && !inSelectData) { out.push(line); continue; }
+    }
+    if (inSelectData && injected) {
+      if (t === '') { out.push(line); inSelectData = false; }
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
 }
 
 export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
@@ -163,6 +382,24 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
   const [validation,  setValidation] = useState<ValidationResult | null>(null);
   const [warnConfirm, setWarnConfirm] = useState(false);
 
+  // ── 불러온 위험률 파일 정보 (content: 실제 CSV 텍스트 — 파이프라인 실행에 필요)
+  const [loadedFileInfo, setLoadedFileInfo] = useState<{
+    name: string; rowCount: number; columns: string[]; content: string;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── SelectData 열 선택 패널
+  const [colSelectorOpen, setColSelectorOpen] = useState(false);
+  const [colSelectorItems, setColSelectorItems] = useState<
+    Array<{ originalName: string; newName: string; selected: boolean }>
+  >([]);
+
+  // ── 표기 방식: 'cumsum_rev'(계리적 정확 표기) | 'sum'(간결 표기)
+  const [notationStyle, setNotationStyle] = useState<'cumsum_rev' | 'sum'>('cumsum_rev');
+
+  // ── 우측 패널 인라인 편집 상태 (lineNumber → {output, formula})
+  const [lineEdits, setLineEdits] = useState<Record<number, { output: string; formula: string }>>({});
+
   // ── 흐름 에러 (실시간)
   const [flowErrors, setFlowErrors] = useState<DSLFlowError[]>([]);
 
@@ -175,12 +412,52 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     setWarnConfirm(false);
   }, [dslText]);
 
-  // ── 자동 draft 저장
+  // ── 자동 draft 저장 (DSL 텍스트)
   useEffect(() => {
     if (isOpen && dslText) {
       try { localStorage.setItem(DRAFT_KEY, dslText); } catch { /* ignore */ }
     }
   }, [dslText, isOpen]);
+
+  // ── 불러온 파일 정보 자동 저장 (sessionStorage — 탭 유지 동안 유효)
+  useEffect(() => {
+    if (!loadedFileInfo) return;
+    try {
+      const { content, ...meta } = loadedFileInfo;
+      sessionStorage.setItem(FILE_META_KEY, JSON.stringify(meta));
+      sessionStorage.setItem(FILE_CONTENT_KEY, content);
+    } catch { /* 용량 초과 시 무시 */ }
+  }, [loadedFileInfo]);
+
+  // ── loadedFileInfo 변경 시 열 선택 목록 초기화
+  // 이미 DSL에 SelectData 내용이 있으면 그것을 우선, 없으면 파일 전체 열
+  useEffect(() => {
+    if (!loadedFileInfo) { setColSelectorItems([]); return; }
+    const selectSection = parsed.sections.find(s => s.type === ModuleType.SelectData);
+    if (selectSection && selectSection.lines.length > 0) {
+      // DSL에 이미 선택 내용이 있으면 파싱된 값 사용 + 파일에만 있는 열 추가
+      const existing = selectSection.lines.map(l => ({
+        originalName: l.formula,
+        newName: l.output,
+        selected: true,
+      }));
+      const existingNames = new Set(existing.map(e => e.originalName));
+      const extras = loadedFileInfo.columns
+        .filter(c => !existingNames.has(c))
+        .map(c => ({ originalName: c, newName: c, selected: false }));
+      setColSelectorItems([...existing, ...extras]);
+    } else {
+      // 파일에서 처음 불러올 때: Age/Sex만 기본 선택, 나머지는 미선택
+      setColSelectorItems(
+        loadedFileInfo.columns.map(c => ({
+          originalName: c,
+          newName: c,
+          selected: isAgeCol(c) || isSexCol(c),
+        }))
+      );
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedFileInfo]);
 
   // ── 모달 열릴 때 초기화
   useEffect(() => {
@@ -191,20 +468,46 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     setOpenPanel(null);
     setSaveDialog(null);
     setRenaming(null);
+    setLineEdits({});
 
-    if (modules.length > 0) {
-      // 캔버스 모듈이 있으면 캔버스에서 DSL 생성 (항상 최신 반영)
+    // ── 불러온 파일 정보 복원: 캔버스 LoadData 모듈 우선 → sessionStorage 순
+    const canvasLoadData = modules.find(m => m.type === ModuleType.LoadData);
+    if (canvasLoadData?.parameters?.fileContent) {
+      const fc = canvasLoadData.parameters.fileContent as string;
+      const { columns: cols, rowCount: rc } = parseCSVMeta(fc);
+      setLoadedFileInfo({
+        name: (canvasLoadData.parameters.source as string) || 'data.csv',
+        rowCount: rc,
+        columns: cols,
+        content: fc,
+      });
+    } else {
+      try {
+        const metaJson = sessionStorage.getItem(FILE_META_KEY);
+        const content  = sessionStorage.getItem(FILE_CONTENT_KEY) ?? '';
+        const meta = metaJson ? JSON.parse(metaJson) : null;
+        setLoadedFileInfo(meta && content ? { ...meta, content } : null);
+      } catch {
+        setLoadedFileInfo(null);
+      }
+    }
+
+    // ── DSL 텍스트: draft 우선 → 캔버스 생성 → 예제
+    // (캔버스가 있어도 사용자가 직접 편집한 draft를 덮어쓰지 않음)
+    const draft = localStorage.getItem(DRAFT_KEY);
+    if (draft) {
+      setDslText(draft);
+    } else if (modules.length > 0) {
       const generated = generateDSL(
         productName,
         modules.map((m) => ({ type: m.type, parameters: m.parameters }))
       );
       setDslText(generated);
     } else {
-      // 캔버스가 비어 있으면 draft 또는 예제 로드
-      const draft = localStorage.getItem(DRAFT_KEY);
-      setDslText(draft || EXAMPLE_DSL);
+      setDslText(EXAMPLE_DSL);
     }
-  }, [isOpen]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]); // modules/productName은 열릴 때 한 번만 참조하므로 의도적으로 제외
 
   // ── 캔버스 모듈로 DSL 재생성
   const handleRegenerateFromCanvas = useCallback(() => {
@@ -291,11 +594,20 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
   // ── 실제 파이프라인 빌드
   const executeBuild = useCallback(() => {
     const configs = buildModuleConfigs(parsed);
-    const parsedModules = configs
+    // DSL 편집기에서 불러온 파일이 있으면 LoadData에 fileContent 주입
+    const enrichedConfigs = loadedFileInfo
+      ? configs.map(cfg =>
+          cfg.type === ModuleType.LoadData
+            ? { ...cfg, parameters: { ...cfg.parameters, source: loadedFileInfo.name, fileContent: loadedFileInfo.content, fileType: 'csv' } }
+            : cfg
+        )
+      : configs;
+
+    const parsedModules = enrichedConfigs
       .filter((c) => c.type !== ModuleType.DefinePolicyInfo)
       .map((c) => ({ type: c.type, include: true, parameters: c.parameters }));
 
-    const policyConfig = configs.find((c) => c.type === ModuleType.DefinePolicyInfo);
+    const policyConfig = enrichedConfigs.find((c) => c.type === ModuleType.DefinePolicyInfo);
     if (policyConfig) {
       parsedModules.unshift({ type: ModuleType.DefinePolicyInfo, include: true, parameters: policyConfig.parameters });
     }
@@ -307,7 +619,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     });
     onBuildPipeline(newModules, connections, parsed.productName);
     onClose();
-  }, [parsed, onBuildPipeline, onClose]);
+  }, [parsed, loadedFileInfo, onBuildPipeline, onClose]);
 
   // ── 흐름 에러 클릭 → 해당 줄로 이동
   const handleFlowErrorClick = useCallback((lineNumber: number) => {
@@ -329,9 +641,16 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
   // ── 파라미터만 적용 (기존 캔버스 유지)
   const handlePatchParameters = useCallback(() => {
     const configs = buildModuleConfigs(parsed);
-    onPatchParameters(configs, parsed.productName);
+    const enrichedConfigs = loadedFileInfo
+      ? configs.map(cfg =>
+          cfg.type === ModuleType.LoadData
+            ? { ...cfg, parameters: { ...cfg.parameters, source: loadedFileInfo.name, fileContent: loadedFileInfo.content, fileType: 'csv' } }
+            : cfg
+        )
+      : configs;
+    onPatchParameters(enrichedConfigs, parsed.productName);
     onClose();
-  }, [parsed, onPatchParameters, onClose]);
+  }, [parsed, loadedFileInfo, onPatchParameters, onClose]);
 
   // ── 검증 후 빌드
   const handleBuildWithValidation = useCallback(() => {
@@ -366,8 +685,9 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     'lx', 'dx', 'Cx', 'Dx', 'Nx', 'Mx',
     'lx_Mortality', 'dx_Mortality', 'Cx_Mortality', 'Dx_Mortality',
     'Nx_Mortality', 'Mx_Mortality',
-    'NNX', 'SUMX', 'PP', 'GP',
-    'i_prem', 'i_claim', 'Death_Rate', 'Age', 'Sex', 'sum',
+    'NNX_Mortality', 'BPV_Mortality', 'NNX', 'BPV', 'SUMX', 'PP', 'GP',
+    'i_prem', 'i_claim', 'Death_Rate', 'Age', 'Sex',
+    'cumsum_rev', 'sum',
   ];
 
   const extractDSLVars = useCallback((text: string): string[] => {
@@ -454,6 +774,140 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleQuickSave(); }
   }, [suggestions, suggActive, applySuggestion, handleQuickSave]);
 
+  // ── 우측 패널 라인 편집 → DSL 텍스트 동기화
+  const handleLineEdit = useCallback((
+    lineNumber: number,
+    field: 'output' | 'formula',
+    newValue: string,
+    currentOutput: string,
+    currentFormula: string,
+  ) => {
+    if (!lineNumber) return;
+    const newOutput  = field === 'output'  ? newValue : currentOutput;
+    const newFormula = field === 'formula' ? newValue : currentFormula;
+
+    // 로컬 편집 상태 저장 (입력 중 커서 유지)
+    setLineEdits(prev => ({ ...prev, [lineNumber]: { output: newOutput, formula: newFormula } }));
+
+    // DSL 텍스트에서 해당 줄 교체 (trailing 주석 보존)
+    setDslText(prev => {
+      const lines = prev.split('\n');
+      const idx = lineNumber - 1;
+      if (idx < 0 || idx >= lines.length) return prev;
+      const oldLine = lines[idx];
+      const commentIdx = oldLine.indexOf('//');
+      const trailingComment = commentIdx >= 0 ? '  ' + oldLine.slice(commentIdx) : '';
+      lines[idx] = `${newOutput} = ${newFormula}${trailingComment}`;
+      return lines.join('\n');
+    });
+  }, []);
+
+  // ── 편집 완료 시 로컬 상태 정리
+  const handleLineEditBlur = useCallback((lineNumber: number) => {
+    setLineEdits(prev => {
+      const next = { ...prev };
+      delete next[lineNumber];
+      return next;
+    });
+  }, []);
+
+  // ── 공통: 파일 정보 반영 + 모듈 자동 적용 (모달 유지)
+  // fileContent: 실제 CSV 텍스트 — LoadData 모듈이 파이프라인 실행 시 이 값으로 데이터를 읽음
+  const applyLoadedData = useCallback((fileName: string, columns: string[], rowCount: number, fileContent: string) => {
+    const newDsl = applyFileToDSL(dslText, fileName, columns);
+    setLoadedFileInfo({ name: fileName, rowCount, columns, content: fileContent });
+    setDslText(newDsl);
+    try {
+      const newParsed = parseDSL(newDsl);
+      const configs = buildModuleConfigs(newParsed);
+      // LoadData 모듈에 fileContent 주입 — 이 값이 없으면 파이프라인 실행 시 "No file content" 에러 발생
+      const enrichedConfigs = configs.map(cfg =>
+        cfg.type === ModuleType.LoadData
+          ? { ...cfg, parameters: { ...cfg.parameters, source: fileName, fileContent, fileType: 'csv' as const } }
+          : cfg
+      );
+      onPatchParameters(enrichedConfigs, newParsed.productName);
+    } catch (_) { /* 파싱 실패 시 무시 */ }
+  }, [dslText, onPatchParameters]);
+
+  // ── 위험률 CSV 파일 불러오기
+  const handleFileLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = (ev.target?.result as string) ?? '';
+      const { columns, rowCount } = parseCSVMeta(text);
+      applyLoadedData(file.name, columns, rowCount, text);
+    };
+    reader.readAsText(file, 'utf-8');
+    // 동일 파일 재선택 허용
+    e.target.value = '';
+  }, [applyLoadedData]);
+
+  // ── 예제 위험률 불러오기
+  const handleExampleLoad = useCallback(() => {
+    const example = SAMPLE_DATA[0];
+    const { columns, rowCount } = parseCSVMeta(example.content);
+    applyLoadedData(example.name, columns, rowCount, example.content);
+  }, [applyLoadedData]);
+
+  // ── 열 선택 패널: 열 선택/해제 토글
+  const handleColToggle = useCallback((idx: number) => {
+    setColSelectorItems(prev => prev.map((item, i) =>
+      i === idx ? { ...item, selected: !item.selected } : item
+    ));
+  }, []);
+
+  // ── 열 선택 패널: 순서 이동 (위/아래)
+  const handleColMove = useCallback((idx: number, dir: -1 | 1) => {
+    setColSelectorItems(prev => {
+      const next = [...prev];
+      const target = idx + dir;
+      if (target < 0 || target >= next.length) return prev;
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  }, []);
+
+  // ── 열 선택 패널: 이름 변경
+  const handleColRename = useCallback((idx: number, newName: string) => {
+    setColSelectorItems(prev => prev.map((item, i) =>
+      i === idx ? { ...item, newName } : item
+    ));
+  }, []);
+
+  // ── 열 선택 패널: 적용 → DSL 업데이트 + 모듈 파라미터 즉시 반영
+  const handleColSelectorApply = useCallback(() => {
+    const newDsl = applySelectDataToDSL(dslText, colSelectorItems);
+    setDslText(newDsl);
+    setColSelectorOpen(false);
+    // DSL 파싱 후 모든 모듈 파라미터 즉시 패치 (SelectData selections 포함)
+    try {
+      const newParsed = parseDSL(newDsl);
+      const configs = buildModuleConfigs(newParsed);
+      const enrichedConfigs = loadedFileInfo
+        ? configs.map(cfg =>
+            cfg.type === ModuleType.LoadData
+              ? { ...cfg, parameters: { ...cfg.parameters, source: loadedFileInfo.name, fileContent: loadedFileInfo.content, fileType: 'csv' } }
+              : cfg
+          )
+        : configs;
+      onPatchParameters(enrichedConfigs, newParsed.productName);
+    } catch (_) { /* 파싱 실패 시 무시 */ }
+  }, [dslText, colSelectorItems, loadedFileInfo, onPatchParameters]);
+
+  // ── 표기 방식 전환: sum() ↔ cumsum_rev()
+  const handleToggleNotation = useCallback(() => {
+    const nextStyle = notationStyle === 'cumsum_rev' ? 'sum' : 'cumsum_rev';
+    setNotationStyle(nextStyle);
+    if (nextStyle === 'sum') {
+      setDslText((prev) => prev.replace(/= cumsum_rev\(/g, '= sum('));
+    } else {
+      setDslText((prev) => prev.replace(/= sum\(/g, '= cumsum_rev('));
+    }
+  }, [notationStyle]);
+
   if (!isOpen) return null;
 
   const includedTypes = new Set(parsed.sections.filter((s) => s.include).map((s) => s.type));
@@ -468,7 +922,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         className={`relative flex flex-col rounded-xl border ${bdr} ${bg} shadow-2xl overflow-hidden`}
-        style={{ width: '960px', maxWidth: '96vw', height: '82vh' }}
+        style={{ width: '1160px', maxWidth: '98vw', height: '86vh' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── 헤더 */}
@@ -494,6 +948,62 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
 
           {/* ── 왼쪽: DSL 에디터 */}
           <div className="flex flex-col w-3/5 border-r" style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }}>
+
+            {/* ── 위험률 파일 불러오기 바 */}
+            <div className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b ${isDark ? 'border-gray-700 bg-gray-900' : 'border-blue-100 bg-blue-50'}`}>
+              <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={handleFileLoad} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
+                  isDark
+                    ? 'bg-blue-800 hover:bg-blue-700 text-blue-200'
+                    : 'bg-blue-100 hover:bg-blue-200 text-blue-700 border border-blue-300'
+                }`}
+              >
+                📂 위험률 불러오기
+              </button>
+              <button
+                onClick={handleExampleLoad}
+                className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
+                  isDark
+                    ? 'bg-emerald-800 hover:bg-emerald-700 text-emerald-200'
+                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-300'
+                }`}
+              >
+                📋 예제에서 불러오기
+              </button>
+              {loadedFileInfo ? (
+                <>
+                  <span className={`text-xs font-medium truncate max-w-[160px] ${isDark ? 'text-gray-200' : 'text-gray-700'}`}
+                        title={loadedFileInfo.name}>
+                    {loadedFileInfo.name}
+                  </span>
+                  <span className={`text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded font-mono ${
+                    isDark ? 'bg-emerald-900/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {loadedFileInfo.rowCount.toLocaleString()}행 · {loadedFileInfo.columns.length}열
+                  </span>
+                  <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                    ✓ 반영 완료
+                  </span>
+                  {/* SelectData 열 선택 버튼 */}
+                  <button
+                    onClick={() => setColSelectorOpen(prev => !prev)}
+                    className={`ml-1 px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 flex items-center gap-1 ${
+                      colSelectorOpen
+                        ? (isDark ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white')
+                        : (isDark ? 'bg-violet-900/60 hover:bg-violet-800 text-violet-300' : 'bg-violet-100 hover:bg-violet-200 text-violet-700 border border-violet-300')
+                    }`}
+                  >
+                    🔧 열 선택 {colSelectorOpen ? '▲' : '▼'}
+                  </button>
+                </>
+              ) : (
+                <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-blue-400'}`}>
+                  CSV 불러오면 LoadData·SelectData가 자동 설정됩니다
+                </span>
+              )}
+            </div>
 
             {/* 에디터 툴바 */}
             <div className={`flex-shrink-0 border-b text-xs ${sub}`} style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }}>
@@ -531,6 +1041,22 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                       className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
                     >🔄 캔버스 재생성</button>
                   )}
+                  <span className={`text-gray-600 select-none`}>|</span>
+                  {/* 표기 방식 선택 */}
+                  <button
+                    onClick={handleToggleNotation}
+                    title={notationStyle === 'cumsum_rev'
+                      ? '현재: cumsum_rev() (계리적 정확 표기) — 클릭하면 sum()으로 전환'
+                      : '현재: sum() (간결 표기) — 클릭하면 cumsum_rev()으로 전환'}
+                    className={`px-2 py-0.5 rounded text-xs font-mono flex items-center gap-1 ${
+                      notationStyle === 'cumsum_rev'
+                        ? (isDark ? 'bg-indigo-800 text-indigo-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200')
+                        : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600')
+                    }`}
+                  >
+                    <span>{notationStyle === 'cumsum_rev' ? 'Σ↑ cumsum_rev' : 'Σ sum'}</span>
+                    <span className="text-[9px] opacity-60">⇄</span>
+                  </button>
                 </div>
               </div>
 
@@ -696,40 +1222,216 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
             )}
           </div>
 
+          {/* ── 열 선택 팝업 오버레이 */}
+          {colSelectorOpen && (
+            <div className="absolute inset-0 z-50 flex items-start justify-center pt-16 px-8"
+                 style={{ background: 'rgba(0,0,0,0.45)' }}
+                 onClick={(e) => { if (e.target === e.currentTarget) setColSelectorOpen(false); }}>
+              <div className={`w-full max-w-lg rounded-xl shadow-2xl border flex flex-col overflow-hidden ${
+                isDark ? 'bg-gray-900 border-violet-700' : 'bg-white border-violet-200'
+              }`} style={{ maxHeight: '70vh' }}>
+                {/* 팝업 헤더 */}
+                <div className={`flex items-center justify-between px-4 py-3 border-b ${
+                  isDark ? 'border-violet-700 bg-violet-950/40' : 'border-violet-200 bg-violet-50'
+                }`}>
+                  <div>
+                    <p className={`text-sm font-semibold ${isDark ? 'text-violet-200' : 'text-violet-800'}`}>
+                      🔧 Select Data — 열 선택 및 순서 설정
+                    </p>
+                    {loadedFileInfo && (
+                      <p className={`text-[11px] mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                        파일: {loadedFileInfo.name} · {loadedFileInfo.rowCount.toLocaleString()}행 · {loadedFileInfo.columns.length}개 열
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setColSelectorItems(prev => prev.map(i => ({ ...i, selected: true })))}
+                      className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300'}`}
+                    >전체 선택</button>
+                    <button
+                      onClick={() => setColSelectorItems(prev => prev.map(i => ({ ...i, selected: false })))}
+                      className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300'}`}
+                    >전체 해제</button>
+                    <button
+                      onClick={() => setColSelectorOpen(false)}
+                      className={`px-2 py-0.5 rounded text-xs ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-700'}`}
+                    >✕</button>
+                  </div>
+                </div>
+
+                {/* 열 목록 */}
+                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
+                  {colSelectorItems.length === 0 ? (
+                    <p className={`text-sm text-center py-4 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                      위험률 파일을 먼저 불러오세요
+                    </p>
+                  ) : (
+                    colSelectorItems.map((item, idx) => (
+                      <div key={idx} className={`flex items-center gap-2 px-2 py-1.5 rounded ${
+                        isDark ? 'hover:bg-gray-800' : 'hover:bg-violet-50'
+                      }`}>
+                        {/* 순서 이동 */}
+                        <div className="flex flex-col gap-0.5 flex-shrink-0">
+                          <button
+                            onClick={() => handleColMove(idx, -1)}
+                            disabled={idx === 0}
+                            className={`w-5 h-4 flex items-center justify-center text-[9px] rounded disabled:opacity-25 ${
+                              isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                            }`}
+                          >▲</button>
+                          <button
+                            onClick={() => handleColMove(idx, 1)}
+                            disabled={idx === colSelectorItems.length - 1}
+                            className={`w-5 h-4 flex items-center justify-center text-[9px] rounded disabled:opacity-25 ${
+                              isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                            }`}
+                          >▼</button>
+                        </div>
+
+                        {/* 체크박스 + 순번 */}
+                        <input
+                          type="checkbox"
+                          checked={item.selected}
+                          onChange={() => handleColToggle(idx)}
+                          className="flex-shrink-0 cursor-pointer w-3.5 h-3.5"
+                        />
+                        <span className={`text-[10px] flex-shrink-0 w-5 text-right ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+                          {idx + 1}
+                        </span>
+
+                        {/* 원본 열 이름 */}
+                        <span className={`font-mono text-xs flex-1 min-w-0 truncate ${
+                          item.selected
+                            ? (isDark ? 'text-gray-200' : 'text-gray-700')
+                            : (isDark ? 'text-gray-600 line-through' : 'text-gray-400 line-through')
+                        }`} title={item.originalName}>{item.originalName}</span>
+
+                        {/* 출력 이름 변경 */}
+                        {item.selected && (
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>→</span>
+                            <input
+                              value={item.newName}
+                              onChange={e => handleColRename(idx, e.target.value)}
+                              spellCheck={false}
+                              placeholder={item.originalName}
+                              className={`font-mono text-xs rounded px-2 py-0.5 border w-32 focus:outline-none focus:ring-1 focus:ring-violet-500 ${
+                                isDark
+                                  ? 'bg-gray-800 border-gray-600 text-emerald-300'
+                                  : 'bg-gray-50 border-gray-300 text-indigo-700'
+                              }`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* 팝업 하단 */}
+                <div className={`flex items-center justify-between px-4 py-3 border-t ${
+                  isDark ? 'border-violet-700 bg-gray-900' : 'border-violet-200 bg-violet-50'
+                }`}>
+                  <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {colSelectorItems.filter(i => i.selected).length} / {colSelectorItems.length}개 열 선택됨
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setColSelectorOpen(false)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300'}`}
+                    >취소</button>
+                    <button
+                      onClick={handleColSelectorApply}
+                      className="px-3 py-1.5 rounded text-xs font-semibold bg-violet-600 hover:bg-violet-500 text-white"
+                    >✓ SelectData DSL에 적용</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── 오른쪽: 미리보기 + 검증 */}
           <div className="flex flex-col w-2/5 overflow-y-auto">
             <div className="p-4 space-y-3 flex-1">
 
               {/* 상품 정보 */}
-              <div>
-                <p className={`text-xs font-bold ${txt}`}>{parsed.productName}</p>
-                <p className={`text-xs ${sub}`}>
+              <div className={`p-2 rounded border ${bdr}`}>
+                <p className={`text-xs font-bold ${txt}`}>{parsed.productName || '(상품명 미정의)'}</p>
+                <p className={`text-xs ${sub} mt-0.5`}>
                   가입연령 {parsed.policyParams.entryAge}세 · {parsed.policyParams.gender} ·{' '}
                   납입 {parsed.policyParams.paymentTerm}년 · 이율 {parsed.policyParams.interestRate}%
                 </p>
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  <span className={`text-[10px] px-1.5 py-px rounded-full font-medium ${
+                    hasParseError
+                      ? (isDark ? 'bg-red-900/60 text-red-300' : 'bg-red-100 text-red-700')
+                      : (isDark ? 'bg-emerald-900/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
+                  }`}>
+                    {hasParseError ? `🚫 파싱 오류 ${parsed.errors.length}건` : '✓ 파싱 정상'}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-px rounded-full font-medium ${
+                    flowErrors.length > 0
+                      ? (isDark ? 'bg-orange-900/60 text-orange-300' : 'bg-orange-100 text-orange-700')
+                      : (isDark ? 'bg-emerald-900/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
+                  }`}>
+                    {flowErrors.length > 0 ? `⚠ 흐름 경고 ${flowErrors.length}건` : '✓ 흐름 정상'}
+                  </span>
+                  <span className={`text-[10px] px-1.5 py-px rounded-full font-medium ${
+                    isDark ? 'bg-indigo-900/60 text-indigo-300' : 'bg-indigo-100 text-indigo-700'
+                  }`}>
+                    모듈 {includedTypes.size}개 포함
+                  </span>
+                </div>
               </div>
 
-              {/* 파싱 에러 */}
+              {/* 파싱 에러 상세 */}
               {hasParseError && (
                 <div className={`p-2 rounded border text-xs ${isDark ? 'border-red-700 bg-red-950/30 text-red-300' : 'border-red-200 bg-red-50 text-red-700'}`}>
-                  <p className="font-semibold mb-1">🚫 파싱 오류</p>
-                  {parsed.errors.map((e, i) => <p key={i} className="font-mono">{e}</p>)}
+                  <p className="font-semibold mb-1">🚫 파싱 오류 — DSL 구문을 확인하세요</p>
+                  {parsed.errors.map((e, i) => <p key={i} className="font-mono break-all">• {e}</p>)}
                 </div>
               )}
 
-              {/* 검증 결과 */}
-              {validation && (validation.errors.length > 0 || validation.warnings.length > 0) && (
+              {/* 흐름 경고 상세 — 실시간, 항상 표시 */}
+              {flowErrors.length > 0 ? (
+                <div className={`p-2 rounded border text-xs ${isDark ? 'border-orange-700 bg-orange-950/20 text-orange-300' : 'border-orange-200 bg-orange-50 text-orange-700'}`}>
+                  <p className="font-semibold mb-1">🔗 흐름 경고 ({flowErrors.length}건) — 클릭하면 해당 줄로 이동</p>
+                  <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                    {flowErrors.map((e, i) => (
+                      <p
+                        key={i}
+                        className={`font-mono break-all cursor-pointer rounded px-1 -mx-1 leading-snug ${isDark ? 'hover:bg-orange-800/40' : 'hover:bg-orange-100'}`}
+                        title={`${e.lineNumber}번째 줄로 이동`}
+                        onClick={() => handleFlowErrorClick(e.lineNumber)}
+                      >
+                        <span className={`mr-1 font-semibold ${isDark ? 'text-orange-400' : 'text-orange-500'}`}>L{e.lineNumber}</span>
+                        {e.message}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                !hasParseError && (
+                  <div className={`p-2 rounded border text-xs ${isDark ? 'border-emerald-800 bg-emerald-950/20 text-emerald-400' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                    ✅ 흐름 오류 없음 — DSL 구조가 정상입니다
+                  </div>
+                )
+              )}
+
+              {/* 검증 결과 (파이프라인 생성 버튼 클릭 후) */}
+              {validation && (
                 <div className="space-y-2">
                   {validation.errors.length > 0 && (
                     <div className={`p-2 rounded border text-xs ${isDark ? 'border-red-700 bg-red-950/30 text-red-300' : 'border-red-200 bg-red-50 text-red-700'}`}>
-                      <p className="font-semibold mb-1">🚫 오류 — 수정 후 생성하세요</p>
-                      {validation.errors.map((e, i) => <p key={i}>• {e}</p>)}
+                      <p className="font-semibold mb-1">🚫 검증 오류 — 수정 후 생성하세요</p>
+                      {validation.errors.map((e, i) => <p key={i} className="break-all">• {e}</p>)}
                     </div>
                   )}
                   {validation.warnings.length > 0 && (
                     <div className={`p-2 rounded border text-xs ${isDark ? 'border-yellow-700 bg-yellow-950/20 text-yellow-300' : 'border-yellow-200 bg-yellow-50 text-yellow-700'}`}>
-                      <p className="font-semibold mb-1">⚠️ 경고</p>
-                      {validation.warnings.map((w, i) => <p key={i}>• {w}</p>)}
+                      <p className="font-semibold mb-1">⚠️ 검증 경고</p>
+                      {validation.warnings.map((w, i) => <p key={i} className="break-all">• {w}</p>)}
                       {warnConfirm && validation.errors.length === 0 && (
                         <button
                           onClick={executeBuild}
@@ -738,60 +1440,33 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                       )}
                     </div>
                   )}
+                  {validation.errors.length === 0 && validation.warnings.length === 0 && (
+                    <div className={`p-2 rounded border text-xs ${isDark ? 'border-emerald-700 bg-emerald-950/20 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                      ✅ 검증 통과 — 파이프라인을 생성합니다
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* 검증 통과 메시지 */}
-              {validation && validation.errors.length === 0 && validation.warnings.length === 0 && (
-                <div className={`p-2 rounded border text-xs ${isDark ? 'border-emerald-700 bg-emerald-950/20 text-emerald-300' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
-                  ✅ 검증 통과 — 파이프라인을 생성합니다
-                </div>
-              )}
-
-              {/* 흐름 에러 */}
-              {flowErrors.length > 0 && (
-                <div className={`p-2 rounded border text-xs ${isDark ? 'border-orange-700 bg-orange-950/20 text-orange-300' : 'border-orange-200 bg-orange-50 text-orange-700'}`}>
-                  <p className="font-semibold mb-1">🔗 흐름 경고 ({flowErrors.length}건) — 클릭하면 해당 줄로 이동</p>
-                  <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                    {flowErrors.map((e, i) => (
-                      <p
-                        key={i}
-                        className={`font-mono truncate cursor-pointer rounded px-1 -mx-1 ${isDark ? 'hover:bg-orange-800/40' : 'hover:bg-orange-100'}`}
-                        title={`${e.lineNumber}번째 줄로 이동`}
-                        onClick={() => handleFlowErrorClick(e.lineNumber)}
-                      >
-                        <span className={`mr-1 ${isDark ? 'text-orange-500' : 'text-orange-400'}`}>L{e.lineNumber}</span>
-                        {e.message}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 모듈 체크리스트 */}
+              {/* 포함 모듈 요약 */}
               <div className={`rounded border ${bdr} overflow-hidden`}>
                 <div className={`px-3 py-1.5 text-xs font-semibold ${sub} border-b ${bdr}`}>
                   포함 모듈 ({includedTypes.size}개)
                 </div>
-                {MODULE_ORDER.map((type) => {
-                  const included = includedTypes.has(type);
-                  const section = parsed.sections.find((s) => s.type === type);
-                  return (
-                    <div key={type} className={`flex items-start gap-2 px-3 py-1.5 border-b last:border-0 ${bdr} ${!included ? 'opacity-35' : ''}`}>
-                      <span className="text-xs mt-0.5">{included ? '✅' : '—'}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-medium ${txt} truncate`}>{MODULE_LABELS[type] ?? type}</p>
-                        {included && section && section.lines.length > 0 && (
-                          <div className="mt-0.5 space-y-0.5">
-                            {section.lines.map((l, i) => (
-                              <p key={i} className={`text-[10px] font-mono ${sub} truncate`}>{l.output} = {l.formula}</p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                <div className="px-3 py-2 flex flex-wrap gap-1.5">
+                  {MODULE_ORDER.map((type) => {
+                    const included = includedTypes.has(type);
+                    return (
+                      <span key={type} className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                        included
+                          ? (isDark ? 'bg-emerald-900/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700')
+                          : (isDark ? 'bg-gray-800 text-gray-600' : 'bg-gray-100 text-gray-400')
+                      }`}>
+                        {included ? '✓' : '○'} {MODULE_LABELS[type] ?? type}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* 문법 도움말 */}
@@ -801,6 +1476,12 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                 <p className="font-mono">## 모듈명</p>
                 <p className="font-mono">출력열 = 입력열/수식</p>
                 <p className="mt-1 font-mono text-[10px]">// 주석 · Ctrl+S 저장</p>
+                <p className={`mt-1.5 font-semibold text-[10px] ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>🔢 NxMx 역방향 누적합</p>
+                <p className="font-mono text-[10px]">Nx_X = cumsum_rev(Dx_X)</p>
+                <p className="font-mono text-[10px]">Mx_X = cumsum_rev(Cx_X, deduct=0.25)</p>
+                <p className={`text-[10px] mt-0.5 ${isDark ? 'text-blue-400' : 'text-blue-500'}`}>
+                  Toolbar의 Σ 버튼으로 sum/cumsum_rev 전환 가능
+                </p>
               </div>
             </div>
           </div>
@@ -809,7 +1490,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
         {/* ── 하단 버튼 */}
         <div className={`flex items-center justify-between px-5 py-3 border-t ${bdr} flex-shrink-0`}>
           <p className={`text-[10px] ${sub}`}>
-            Ctrl+S 빠른 저장 · 💾 저장… 이름 지정 · 📌 예제로 저장… 예제 등록
+            Ctrl+S 빠른 저장 · 💾 저장… 이름 지정 · 📌 예제로 저장… 예제 등록 · Σ 버튼으로 sum/cumsum_rev 전환
           </p>
           <div className="flex gap-2">
             <button
