@@ -86,7 +86,7 @@ import {
 import { savePipeline, loadPipeline } from "./utils/fileOperations";
 import { loadModuleDefault } from "./utils/moduleDefaults";
 import { buildPipelineFromModel } from "./utils/pipelineBuilder";
-import { generateDSL, extractModuleSection, replaceModuleSection } from "./utils/dslParser";
+import { generateDSL } from "./utils/dslParser";
 
 const getModuleDefault = (type: ModuleType) => {
   const defaultData = DEFAULT_MODULES.find((m) => m.type === type)!;
@@ -433,6 +433,125 @@ const saveInitialState = (
   }
 };
 
+// ── 출력 이름 변경 추적 헬퍼 ──────────────────────────────────────────────────
+
+/**
+ * 모듈 저장 전후 파라미터를 비교하여 출력 컬럼명 변경 맵을 반환한다.
+ * 예: CalculateSurvivors에서 name "Mortality"→"Custom" 이면
+ *   "lx_Mortality"→"lx_Custom", "Dx_Mortality"→"Dx_Custom"
+ */
+function getColumnNameChanges(
+  moduleType: ModuleType,
+  oldParams: Record<string, any>,
+  newParams: Record<string, any>
+): Map<string, string> {
+  const changes = new Map<string, string>();
+
+  if (moduleType === ModuleType.CalculateSurvivors) {
+    const oldCalcs: any[] = oldParams.calculations ?? [];
+    const newCalcs: any[] = newParams.calculations ?? [];
+    for (const oldCalc of oldCalcs) {
+      const newCalc = newCalcs.find((c) => c.id === oldCalc.id);
+      if (newCalc && oldCalc.name !== newCalc.name) {
+        changes.set(`lx_${oldCalc.name}`, `lx_${newCalc.name}`);
+        changes.set(`Dx_${oldCalc.name}`, `Dx_${newCalc.name}`);
+      }
+    }
+  } else if (moduleType === ModuleType.ClaimsCalculator) {
+    const oldCalcs: any[] = oldParams.calculations ?? [];
+    const newCalcs: any[] = newParams.calculations ?? [];
+    for (const oldCalc of oldCalcs) {
+      const newCalc = newCalcs.find((c) => c.id === oldCalc.id);
+      if (newCalc && oldCalc.name !== newCalc.name) {
+        changes.set(`dx_${oldCalc.name}`, `dx_${newCalc.name}`);
+        changes.set(`Cx_${oldCalc.name}`, `Cx_${newCalc.name}`);
+      }
+    }
+  } else if (moduleType === ModuleType.NxMxCalculator) {
+    const oldNxCalcs: any[] = oldParams.nxCalculations ?? [];
+    const newNxCalcs: any[] = newParams.nxCalculations ?? [];
+    for (const oldCalc of oldNxCalcs) {
+      const newCalc = newNxCalcs.find((c) => c.id === oldCalc.id);
+      if (newCalc && oldCalc.name !== newCalc.name) {
+        changes.set(`Nx_${oldCalc.name}`, `Nx_${newCalc.name}`);
+      }
+    }
+    const oldMxCalcs: any[] = oldParams.mxCalculations ?? [];
+    const newMxCalcs: any[] = newParams.mxCalculations ?? [];
+    for (const oldCalc of oldMxCalcs) {
+      const newCalc = newMxCalcs.find((c) => c.id === oldCalc.id);
+      if (newCalc && oldCalc.name !== newCalc.name) {
+        changes.set(`Mx_${oldCalc.name}`, `Mx_${newCalc.name}`);
+      }
+    }
+  }
+
+  return changes;
+}
+
+/**
+ * 컬럼명 변경 맵을 다운스트림 모듈의 파라미터에 적용한다.
+ * 변경이 없으면 동일한 params 객체를 반환한다.
+ */
+function applyColumnNameChanges(
+  moduleType: ModuleType,
+  params: Record<string, any>,
+  nameChanges: Map<string, string>
+): Record<string, any> {
+  if (nameChanges.size === 0) return params;
+
+  const rename = (col: string): string => nameChanges.get(col) ?? col;
+
+  if (moduleType === ModuleType.ClaimsCalculator) {
+    const calcs: any[] = params.calculations ?? [];
+    const updatedCalcs = calcs.map((c) => {
+      const newLx = rename(c.lxColumn);
+      return newLx !== c.lxColumn ? { ...c, lxColumn: newLx } : c;
+    });
+    if (updatedCalcs.some((c, i) => c !== calcs[i])) {
+      return { ...params, calculations: updatedCalcs };
+    }
+  } else if (moduleType === ModuleType.NxMxCalculator) {
+    const nxCalcs: any[] = params.nxCalculations ?? [];
+    const mxCalcs: any[] = params.mxCalculations ?? [];
+    const updatedNx = nxCalcs.map((c) => {
+      const newBase = rename(c.baseColumn);
+      return newBase !== c.baseColumn ? { ...c, baseColumn: newBase } : c;
+    });
+    const updatedMx = mxCalcs.map((c) => {
+      const newBase = rename(c.baseColumn);
+      return newBase !== c.baseColumn ? { ...c, baseColumn: newBase } : c;
+    });
+    if (
+      updatedNx.some((c, i) => c !== nxCalcs[i]) ||
+      updatedMx.some((c, i) => c !== mxCalcs[i])
+    ) {
+      return { ...params, nxCalculations: updatedNx, mxCalculations: updatedMx };
+    }
+  } else if (moduleType === ModuleType.PremiumComponent) {
+    const nnxCalcs: any[] = params.nnxCalculations ?? [];
+    const sumxCalcs: any[] = params.sumxCalculations ?? [];
+    const updatedNnx = nnxCalcs.map((c) => {
+      const newNx = rename(c.nxColumn);
+      return newNx !== c.nxColumn ? { ...c, nxColumn: newNx } : c;
+    });
+    const updatedSumx = sumxCalcs.map((c) => {
+      const newMx = rename(c.mxColumn);
+      return newMx !== c.mxColumn ? { ...c, mxColumn: newMx } : c;
+    });
+    if (
+      updatedNnx.some((c, i) => c !== nnxCalcs[i]) ||
+      updatedSumx.some((c, i) => c !== sumxCalcs[i])
+    ) {
+      return { ...params, nnxCalculations: updatedNnx, sumxCalculations: updatedSumx };
+    }
+  }
+
+  return params;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   // Shared samples (from files, shared across all users)
@@ -682,53 +801,62 @@ const App: React.FC = () => {
   }, [tabContextMenu]);
 
   // Additional Variables 모듈의 원래 상태를 저장하기 위한 ref
-  const additionalVariablesInitialStateRef = useRef<Map<string, {
+  // 모든 모듈의 편집 전 상태를 저장 (취소 시 복원용)
+  const moduleInitialStateRef = useRef<Map<string, {
+    parameters: Record<string, any>;
     status: ModuleStatus;
     outputData: any;
     downstreamStates: Map<string, { status: ModuleStatus; outputData: any }>;
   }>>(new Map());
 
+  // 하위 호환성을 위한 별칭
+  const additionalVariablesInitialStateRef = moduleInitialStateRef;
+
   const handleEditParameters = useCallback((moduleId: string) => {
     const module = modules.find((m) => m.id === moduleId);
-    // Additional Variables 모듈의 경우 원래 상태 저장
-    if (module && module.type === ModuleType.AdditionalName) {
-      // Downstream 모듈들의 상태도 저장
-      const adj: Record<string, string[]> = {};
-      connections.forEach((conn) => {
-        if (!adj[conn.from.moduleId]) adj[conn.from.moduleId] = [];
-        adj[conn.from.moduleId].push(conn.to.moduleId);
-      });
-      
-      const downstreamStates = new Map<string, { status: ModuleStatus; outputData: any }>();
-      const queue = [moduleId];
-      const visited = new Set<string>();
-      
-      while (queue.length > 0) {
-        const currentId = queue.shift()!;
-        if (visited.has(currentId)) continue;
-        visited.add(currentId);
-        
-        const downstream = adj[currentId] || [];
-        downstream.forEach((childId) => {
-          const childModule = modules.find((m) => m.id === childId);
-          if (childModule) {
-            downstreamStates.set(childId, {
-              status: childModule.status,
-              outputData: childModule.outputData,
-            });
-            queue.push(childId);
-          }
-        });
-      }
-      
-      additionalVariablesInitialStateRef.current.set(moduleId, {
-        status: module.status,
-        outputData: module.outputData,
-        downstreamStates,
+    if (!module) { setEditingModuleId(moduleId); return; }
+
+    // 편집 전 상태 저장 (모든 모듈)
+    const adj: Record<string, string[]> = {};
+    connections.forEach((conn) => {
+      if (!adj[conn.from.moduleId]) adj[conn.from.moduleId] = [];
+      adj[conn.from.moduleId].push(conn.to.moduleId);
+    });
+
+    const downstreamStates = new Map<string, { status: ModuleStatus; outputData: any }>();
+    const queue = [moduleId];
+    const visited = new Set<string>();
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      if (visited.has(currentId)) continue;
+      visited.add(currentId);
+      (adj[currentId] || []).forEach((childId) => {
+        const childModule = modules.find((m) => m.id === childId);
+        if (childModule) {
+          downstreamStates.set(childId, {
+            status: childModule.status,
+            outputData: childModule.outputData,
+          });
+          queue.push(childId);
+        }
       });
     }
+
+    moduleInitialStateRef.current.set(moduleId, {
+      parameters: JSON.parse(JSON.stringify(module.parameters)),
+      status: module.status,
+      outputData: module.outputData,
+      downstreamStates,
+    });
+
     setEditingModuleId(moduleId);
   }, [modules, connections]);
+
+  // 현재 편집 중인 모듈 ID를 ref로도 유지 (updateModuleParameters 내부에서 동기 접근)
+  const editingModuleIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    editingModuleIdRef.current = editingModuleId;
+  }, [editingModuleId]);
 
   const editingModule = useMemo(() => {
     return modules.find((m) => m.id === editingModuleId) || null;
@@ -1625,23 +1753,38 @@ const App: React.FC = () => {
 
   const DRAFT_KEY = 'lmf_dsl_draft';
 
-  // 모듈 저장 시 DSL 드래프트의 해당 섹션을 파라미터 기준으로 동기화
+  // 모듈 저장 시 출력 이름 변경을 다운스트림에 전파하고 전체 DSL을 재생성
   const handleModuleSaved = useCallback(
     (moduleType: ModuleType, savedParams: Record<string, any>) => {
-      // 현재 캔버스 모듈 목록에서 해당 모듈 파라미터를 저장된 값으로 대체
-      const snapshotModules = modules.map((m) =>
-        m.type === moduleType ? { ...m, parameters: savedParams } : m
-      );
-      const newSection = extractModuleSection(
-        generateDSL(productName, snapshotModules),
-        moduleType
-      );
-      if (!newSection) return;
-      const currentDraft = localStorage.getItem(DRAFT_KEY) ?? '';
-      const updatedDraft = currentDraft
-        ? replaceModuleSection(currentDraft, moduleType, newSection)
-        : generateDSL(productName, snapshotModules);
-      localStorage.setItem(DRAFT_KEY, updatedDraft);
+      const moduleId = editingModuleIdRef.current;
+
+      // 편집 전 파라미터로 이름 변경 감지
+      const initialState = moduleId ? moduleInitialStateRef.current.get(moduleId) : null;
+      const oldParams = initialState?.parameters;
+      const nameChanges = oldParams
+        ? getColumnNameChanges(moduleType, oldParams, savedParams)
+        : new Map<string, string>();
+
+      // 다운스트림 모듈 파라미터 업데이트 (이름 변경이 있을 때만)
+      if (nameChanges.size > 0) {
+        setModules((prevModules) =>
+          prevModules.map((m) => {
+            if (m.id === moduleId) return m; // 현재 모듈은 onClose에서 처리
+            const updatedParams = applyColumnNameChanges(m.type, m.parameters, nameChanges);
+            return updatedParams !== m.parameters ? { ...m, parameters: updatedParams } : m;
+          })
+        );
+      }
+
+      // 전체 DSL 재생성 (최신 modules 기준으로 인라인 빌드)
+      const updatedModules = modules.map((m) => {
+        if (m.id === moduleId) return { ...m, parameters: savedParams };
+        if (nameChanges.size === 0) return m;
+        const updatedParams = applyColumnNameChanges(m.type, m.parameters, nameChanges);
+        return updatedParams !== m.parameters ? { ...m, parameters: updatedParams } : m;
+      });
+      const fullDsl = generateDSL(productName, updatedModules);
+      localStorage.setItem(DRAFT_KEY, fullDsl);
     },
     [modules, productName]
   );
@@ -1804,23 +1947,47 @@ const App: React.FC = () => {
   );
 
   const updateModuleParameters = useCallback(
-    (id: string, newParams: Record<string, any>) => {
+    (id: string, newParams: Record<string, any>, replace = false) => {
       setModules((prevModules) => {
-        // 1. Build adjacency list for downstream identification
+        const currentModule = prevModules.find((m) => m.id === id);
+        const mergedParams = currentModule
+          ? replace
+            ? { ...newParams }
+            : { ...currentModule.parameters, ...newParams }
+          : newParams;
+
+        // ── 모달 편집 중: status/outputData 변경 없이 파라미터만 업데이트
+        // (저장 또는 취소 시점에 한 번에 반영)
+        if (editingModuleIdRef.current === id) {
+          return prevModules.map((m) =>
+            m.id === id ? { ...m, parameters: mergedParams } : m
+          );
+        }
+
+        // ── 모달 밖: 실제 변경 없으면 status 유지
+        if (currentModule) {
+          const unchanged =
+            JSON.stringify(mergedParams) ===
+            JSON.stringify(currentModule.parameters);
+          if (unchanged) {
+            return prevModules.map((m) =>
+              m.id === id ? { ...m, parameters: mergedParams } : m
+            );
+          }
+        }
+
+        // ── 모달 밖 + 실제 변경: 현재 모듈 및 다운스트림 Pending으로 리셋
         const adj: Record<string, string[]> = {};
         connections.forEach((conn) => {
           if (!adj[conn.from.moduleId]) adj[conn.from.moduleId] = [];
           adj[conn.from.moduleId].push(conn.to.moduleId);
         });
 
-        // 2. Find all downstream modules using BFS
         const modulesToReset = new Set<string>();
-        const queue = [id]; // Start with current module
-
+        const queue = [id];
         while (queue.length > 0) {
           const currentId = queue.shift()!;
-          const downstream = adj[currentId] || [];
-          downstream.forEach((childId) => {
+          (adj[currentId] || []).forEach((childId) => {
             if (!modulesToReset.has(childId)) {
               modulesToReset.add(childId);
               queue.push(childId);
@@ -1829,22 +1996,16 @@ const App: React.FC = () => {
         }
 
         return prevModules.map((m) => {
-          // Update the module itself
           if (m.id === id) {
             return {
               ...m,
-              parameters: { ...m.parameters, ...newParams },
+              parameters: mergedParams,
               status: ModuleStatus.Pending,
               outputData: undefined,
             };
           }
-          // Reset downstream modules
           if (modulesToReset.has(m.id)) {
-            return {
-              ...m,
-              status: ModuleStatus.Pending,
-              outputData: undefined,
-            };
+            return { ...m, status: ModuleStatus.Pending, outputData: undefined };
           }
           return m;
         });
@@ -2532,6 +2693,30 @@ const App: React.FC = () => {
                 "Interest Rate is not defined in the connected Policy Info module."
               );
 
+            // 입력 데이터의 열 이름 목록
+            const inputColNames = riskData.columns.map((c) => c.name);
+
+            // ageColumn/genderColumn이 입력 데이터에 있는지 확인
+            if (!inputColNames.includes(ageColumn))
+              throw new Error(
+                `[Rating Basis Builder] '${ageColumn}' 열이 입력 데이터에 없습니다. SelectData에서 이 열을 선택했는지 확인하세요.`
+              );
+            if (!inputColNames.includes(genderColumn))
+              throw new Error(
+                `[Rating Basis Builder] '${genderColumn}' 열이 입력 데이터에 없습니다. SelectData에서 이 열을 선택했는지 확인하세요.`
+              );
+
+            // columnRenames의 원본 열(from)이 입력 데이터에 있는지 확인
+            const columnRenames: Array<{ from: string; to: string }> =
+              module.parameters.columnRenames ?? [];
+            for (const { from } of columnRenames) {
+              if (!inputColNames.includes(from)) {
+                throw new Error(
+                  `[Rating Basis Builder] '${from}' 열이 입력 데이터에 없습니다. SelectData에서 이 열을 선택했는지 확인하세요.`
+                );
+              }
+            }
+
             // Filter out rows with non-numeric values if excludeNonNumericRows is true
             let rowsToProcess = riskData.rows || [];
             if (excludeNonNumericRows) {
@@ -2661,8 +2846,18 @@ const App: React.FC = () => {
             if (!inputData.rows)
               throw new Error("Input data is valid but contains no rows.");
 
-            const { ageColumn, mortalityColumn, calculations, addFixedLx } =
-              module.parameters;
+            const { ageColumn, addFixedLx } = module.parameters;
+            let { mortalityColumn, calculations } = module.parameters;
+
+            // mortalityColumn이 없거나 입력 데이터에 존재하지 않을 경우 Death_Rate로 자동 적용
+            if (
+              (!mortalityColumn ||
+                mortalityColumn === "None" ||
+                !inputData.columns.some((c) => c.name === mortalityColumn)) &&
+              inputData.columns.some((c) => c.name === "Death_Rate")
+            ) {
+              mortalityColumn = "Death_Rate";
+            }
 
             if (!ageColumn || ageColumn === "None")
               throw new Error("Age Column must be specified.");
@@ -2697,10 +2892,20 @@ const App: React.FC = () => {
               return num;
             };
 
+            const inputColNames = new Set(inputData.columns.map((c) => c.name));
+
             for (const calc of calculations) {
               let currentSurvivors = 100000;
               const lxColName = `lx_${calc.name}`;
-              const decrementRatesInCalc: string[] = calc.decrementRates || [];
+              // decrementRates에 없는 열이 있으면 mortalityColumn으로 대체 (SelectData에서 이름 변경된 경우 대응)
+              const rawRates: string[] = calc.decrementRates || [];
+              const decrementRatesInCalc = rawRates.map((rate) =>
+                !inputColNames.has(rate) &&
+                mortalityColumn &&
+                inputColNames.has(mortalityColumn)
+                  ? mortalityColumn
+                  : rate
+              );
               const isMortalityPresent =
                 mortalityColumn !== "None" &&
                 decrementRatesInCalc.includes(mortalityColumn);
@@ -3033,6 +3238,50 @@ const App: React.FC = () => {
                 module = currentModules[modIdx];
               }
             }
+            // Auto-sync nxCalculations with available Dx_* columns (same as mxCalculations with Cx_*)
+            const dxColumns = inputData.columns
+              .filter((c) => c.name.startsWith("Dx_"))
+              .map((c) => c.name);
+
+            if (dxColumns.length > 0) {
+              const existingNxBaseSet = new Set(
+                nxCalculations.map((c: any) => c.baseColumn)
+              );
+              const dxColumnsSet = new Set(dxColumns);
+              const needsNxUpdate =
+                nxCalculations.length === 0 ||
+                nxCalculations.length !== dxColumns.length ||
+                dxColumns.some((col) => !existingNxBaseSet.has(col)) ||
+                nxCalculations.some(
+                  (calc: any) => !dxColumnsSet.has(calc.baseColumn)
+                );
+              if (needsNxUpdate) {
+                nxCalculations = dxColumns.map((col, idx) => {
+                  const existing = nxCalculations.find(
+                    (c: any) => c.baseColumn === col
+                  );
+                  if (existing) return existing;
+                  return {
+                    id: `nx-auto-${Date.now()}-${idx}`,
+                    baseColumn: col,
+                    name: col.replace(/^Dx_/, ""),
+                    active: true,
+                  };
+                });
+                module.parameters = { ...module.parameters, nxCalculations };
+                const modIdx = currentModules.findIndex(
+                  (m) => m.id === module.id
+                );
+                if (modIdx !== -1) {
+                  currentModules[modIdx] = {
+                    ...currentModules[modIdx],
+                    parameters: module.parameters,
+                  };
+                  module = currentModules[modIdx];
+                }
+              }
+            }
+
             const outputRows = inputData.rows.map((r) => ({ ...r }));
             const outputColumnsInfo = [...inputData.columns];
 
@@ -3048,8 +3297,9 @@ const App: React.FC = () => {
                 sum += baseData[i];
                 cumulativeData[i] = sum;
               }
-              // Use baseColumn name directly: Dx_XXX -> Nx_XXX
-              const newColName = calc.baseColumn.replace(/^Dx_/, "Nx_");
+              // calc.name이 있으면 우선 사용, 없으면 baseColumn에서 파생: Dx_XXX -> Nx_XXX
+              const nxBaseName = calc.name || calc.baseColumn.replace(/^Dx_/, "");
+              const newColName = `Nx_${nxBaseName}`;
               outputRows.forEach((row, i) => {
                 row[newColName] = roundTo5(cumulativeData[i]);
               });
@@ -3085,8 +3335,9 @@ const App: React.FC = () => {
                 sum += adjustedCxData[i];
                 cumulativeData[i] = sum;
               }
-              // Use baseColumn name directly: Cx_XXX -> Mx_XXX
-              const newColName = calc.baseColumn.replace(/^Cx_/, "Mx_");
+              // calc.name이 있으면 우선 사용, 없으면 baseColumn에서 파생: Cx_XXX -> Mx_XXX
+              const mxBaseName = calc.name || calc.baseColumn.replace(/^Cx_/, "");
+              const newColName = `Mx_${mxBaseName}`;
               outputRows.forEach((row, i) => {
                 row[newColName] = roundTo5(cumulativeData[i]);
               });
@@ -3199,6 +3450,63 @@ const App: React.FC = () => {
                 module = currentModules[modIdx];
               }
             }
+            // Auto-sync nnxCalculations with available Nx_* columns
+            const availableNxColumns = inputData.columns
+              .filter((c) => c.name.startsWith("Nx_"))
+              .map((c) => c.name);
+
+            if (availableNxColumns.length > 0) {
+              const existingNxSet = new Set(
+                nnxCalculations.map((c: any) => c.nxColumn)
+              );
+              const nxColumnsSet = new Set(availableNxColumns);
+              const needsNxUpdate =
+                nnxCalculations.length === 0 ||
+                nnxCalculations.length !== availableNxColumns.length ||
+                availableNxColumns.some((col) => !existingNxSet.has(col)) ||
+                nnxCalculations.some(
+                  (calc: any) => !nxColumnsSet.has(calc.nxColumn)
+                );
+              if (needsNxUpdate) {
+                nnxCalculations = availableNxColumns.map((col, idx) => {
+                  const existing = nnxCalculations.find(
+                    (c: any) => c.nxColumn === col
+                  );
+                  if (existing) return existing;
+                  const dxCol = col.replace(/^Nx_/, "Dx_");
+                  const hasDx = inputData.columns.some(
+                    (c) => c.name === dxCol
+                  );
+                  return {
+                    id: `nnx-auto-${Date.now()}-${idx}`,
+                    nxColumn: col,
+                    dxColumn: hasDx ? dxCol : "",
+                  };
+                });
+                module.parameters = { ...module.parameters, nnxCalculations };
+                const modIdx = currentModules.findIndex(
+                  (m) => m.id === module.id
+                );
+                if (modIdx !== -1) {
+                  currentModules[modIdx] = {
+                    ...currentModules[modIdx],
+                    parameters: module.parameters,
+                  };
+                  module = currentModules[modIdx];
+                }
+              }
+            }
+
+            // 기존 nnxCalculations에서 dxColumn이 비어있으면 자동으로 채움
+            nnxCalculations = nnxCalculations.map((calc: any) => {
+              if (!calc.dxColumn && calc.nxColumn) {
+                const dxCol = calc.nxColumn.replace(/^Nx_/, "Dx_");
+                const hasDx = inputData.columns.some((c) => c.name === dxCol);
+                return { ...calc, dxColumn: hasDx ? dxCol : "" };
+              }
+              return calc;
+            });
+
             const { paymentTerm, policyTerm } = policyInfo;
             const rows = inputData.rows;
 
@@ -3247,6 +3555,8 @@ const App: React.FC = () => {
 
             let mmxValue = 0;
             const mxResults: Record<string, number> = {};
+            // policyTerm=0 means whole life → use last row as terminal (Mx[last] ≈ 0)
+            const effectivePolicyTermIdx = policyTerm > 0 ? policyTerm : rows.length - 1;
             for (const calc of sumxCalculations) {
               // Skip if mxColumn is not set
               if (!calc.mxColumn) continue;
@@ -3255,7 +3565,7 @@ const App: React.FC = () => {
               const mx0_val = rows[0]?.[calc.mxColumn];
               const mx0 = mx0_val !== undefined && mx0_val !== null ? Number(mx0_val) : 0;
 
-              const mxN_row = rows[policyTerm];
+              const mxN_row = rows[effectivePolicyTermIdx] ?? rows[rows.length - 1];
               const mxN_val = mxN_row?.[calc.mxColumn];
               const mxN = mxN_val !== undefined && mxN_val !== null ? Number(mxN_val) : 0;
 
@@ -5687,36 +5997,70 @@ const App: React.FC = () => {
       {editingModule && (
         <ParameterInputModal
           module={editingModule}
-          onClose={(shouldRestore?: boolean) => {
-            // Additional Variables 모듈의 경우 변경이 없으면 원래 상태로 복원
-            if (shouldRestore && editingModule && editingModule.type === ModuleType.AdditionalName) {
-              const initialState = additionalVariablesInitialStateRef.current.get(editingModule.id);
-              if (initialState) {
-                // 모듈의 원래 상태로 복원
-                setModules((prevModules) => {
-                  return prevModules.map((m) => {
-                    if (m.id === editingModule.id) {
-                      return {
-                        ...m,
-                        status: initialState.status,
-                        outputData: initialState.outputData,
-                      };
+          onClose={(shouldRestore?: boolean, skipStatusReset?: boolean) => {
+            if (editingModule) {
+              const initialState = moduleInitialStateRef.current.get(editingModule.id);
+
+              if (shouldRestore) {
+                // 취소/변경없음 → 편집 전 상태(params + status + outputData) 전체 복원
+                if (initialState) {
+                  setModules((prevModules) =>
+                    prevModules.map((m) => {
+                      if (m.id === editingModule.id) {
+                        return {
+                          ...m,
+                          parameters: initialState.parameters,
+                          status: initialState.status,
+                          outputData: initialState.outputData,
+                        };
+                      }
+                      const ds = initialState.downstreamStates.get(m.id);
+                      return ds ? { ...m, status: ds.status, outputData: ds.outputData } : m;
+                    })
+                  );
+                }
+              } else if (!skipStatusReset) {
+                // 저장 후 닫기 → 파라미터 실제 변경 여부 확인 후 Pending 처리
+                if (initialState) {
+                  setModules((prevModules) => {
+                    const current = prevModules.find((m) => m.id === editingModule.id);
+                    if (!current) return prevModules;
+
+                    const paramsChanged =
+                      JSON.stringify(current.parameters) !==
+                      JSON.stringify(initialState.parameters);
+
+                    if (!paramsChanged) {
+                      // 변경 없음 → status/outputData 유지
+                      return prevModules;
                     }
-                    // Downstream 모듈들도 원래 상태로 복원
-                    const downstreamState = initialState.downstreamStates.get(m.id);
-                    if (downstreamState) {
-                      return {
-                        ...m,
-                        status: downstreamState.status,
-                        outputData: downstreamState.outputData,
-                      };
+
+                    // 변경 있음 → 현재 모듈 + 다운스트림 Pending으로 리셋
+                    const adj: Record<string, string[]> = {};
+                    connections.forEach((conn) => {
+                      if (!adj[conn.from.moduleId]) adj[conn.from.moduleId] = [];
+                      adj[conn.from.moduleId].push(conn.to.moduleId);
+                    });
+                    const toReset = new Set<string>();
+                    const q = [editingModule.id];
+                    while (q.length > 0) {
+                      const cid = q.shift()!;
+                      (adj[cid] || []).forEach((child) => {
+                        if (!toReset.has(child)) { toReset.add(child); q.push(child); }
+                      });
                     }
-                    return m;
+                    return prevModules.map((m) => {
+                      if (m.id === editingModule.id)
+                        return { ...m, status: ModuleStatus.Pending, outputData: undefined };
+                      if (toReset.has(m.id))
+                        return { ...m, status: ModuleStatus.Pending, outputData: undefined };
+                      return m;
+                    });
                   });
-                });
-                // 복원 후 ref에서 제거
-                additionalVariablesInitialStateRef.current.delete(editingModule.id);
+                }
               }
+
+              moduleInitialStateRef.current.delete(editingModule.id);
             }
             setEditingModuleId(null);
           }}

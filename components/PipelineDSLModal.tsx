@@ -41,7 +41,7 @@ const MODULE_ORDER = [
 
 const MODULE_LABELS: Partial<Record<ModuleType, string>> = {
   [ModuleType.LoadData]: '위험률 로드',
-  [ModuleType.SelectRiskRates]: '연령 성별 매칭',
+  [ModuleType.SelectRiskRates]: 'Rating Basis Builder',
   [ModuleType.SelectData]: '데이터 선택',
   [ModuleType.RateModifier]: '요율 수정',
   [ModuleType.CalculateSurvivors]: '생존자 계산',
@@ -101,9 +101,9 @@ const MODULE_DESCRIPTIONS: Partial<Record<ModuleType, { desc: string; formulas: 
   [ModuleType.PremiumComponent]: {
     desc: '보험료·급부 현가 구성 요소를 계산합니다',
     formulas: [
-      'NNX = Nx[0] - Nx[m]  (납입기간 보험료 납입연금 현가)',
-      '[0] = 가입 시점, [m] = 납입 만료 시점',
-      'BPV = (Mx[0] - Mx[n]) × 보험가입금액  (Benefit Present Value)',
+      'NNX = Diff(Nx, m)  ← Nx[0] - Nx[m]  (납입기간 보험료 연금현가)',
+      'Diff(col, n) = col[0] - col[n]  |  m = 납입만료, n = 보험만기',
+      'BPV = Diff(Mx, n) × 보험가입금액  ← (Mx[0] - Mx[n]) × 금액',
       '생성 변수: NNX_[열이름](Year/Half/Quarter/Month), BPV_[열이름]',
     ],
   },
@@ -393,6 +393,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
   const [colSelectorItems, setColSelectorItems] = useState<
     Array<{ originalName: string; newName: string; selected: boolean }>
   >([]);
+  const [colSelectorDeathRate, setColSelectorDeathRate] = useState<string>('');
 
   // ── 표기 방식: 'cumsum_rev'(계리적 정확 표기) | 'sum'(간결 표기)
   const [notationStyle, setNotationStyle] = useState<'cumsum_rev' | 'sum'>('cumsum_rev');
@@ -432,7 +433,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
   // ── loadedFileInfo 변경 시 열 선택 목록 초기화
   // 이미 DSL에 SelectData 내용이 있으면 그것을 우선, 없으면 파일 전체 열
   useEffect(() => {
-    if (!loadedFileInfo) { setColSelectorItems([]); return; }
+    if (!loadedFileInfo) { setColSelectorItems([]); setColSelectorDeathRate(''); return; }
     const selectSection = parsed.sections.find(s => s.type === ModuleType.SelectData);
     if (selectSection && selectSection.lines.length > 0) {
       // DSL에 이미 선택 내용이 있으면 파싱된 값 사용 + 파일에만 있는 열 추가
@@ -445,7 +446,11 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
       const extras = loadedFileInfo.columns
         .filter(c => !existingNames.has(c))
         .map(c => ({ originalName: c, newName: c, selected: false }));
-      setColSelectorItems([...existing, ...extras]);
+      const allItems = [...existing, ...extras];
+      setColSelectorItems(allItems);
+      // Death_Rate 열 초기화: newName이 Death_Rate인 항목의 originalName
+      const drItem = existing.find(e => e.newName === 'Death_Rate');
+      setColSelectorDeathRate(drItem?.originalName ?? '');
     } else {
       // 파일에서 처음 불러올 때: Age/Sex만 기본 선택, 나머지는 미선택
       setColSelectorItems(
@@ -455,6 +460,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
           selected: isAgeCol(c) || isSexCol(c),
         }))
       );
+      setColSelectorDeathRate('');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedFileInfo]);
@@ -893,9 +899,17 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
               : cfg
           )
         : configs;
-      onPatchParameters(enrichedConfigs, newParsed.productName);
+      // deathRateColumn이 설정된 경우 CalculateSurvivors의 mortalityColumn에도 반영
+      const finalConfigs = colSelectorDeathRate
+        ? enrichedConfigs.map(cfg =>
+            cfg.type === ModuleType.CalculateSurvivors
+              ? { ...cfg, parameters: { ...cfg.parameters, mortalityColumn: 'Death_Rate' } }
+              : cfg
+          )
+        : enrichedConfigs;
+      onPatchParameters(finalConfigs, newParsed.productName);
     } catch (_) { /* 파싱 실패 시 무시 */ }
-  }, [dslText, colSelectorItems, loadedFileInfo, onPatchParameters]);
+  }, [dslText, colSelectorItems, colSelectorDeathRate, loadedFileInfo, onPatchParameters]);
 
   // ── 표기 방식 전환: sum() ↔ cumsum_rev()
   const handleToggleNotation = useCallback(() => {
@@ -988,7 +1002,17 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                   </span>
                   {/* SelectData 열 선택 버튼 */}
                   <button
-                    onClick={() => setColSelectorOpen(prev => !prev)}
+                    onClick={() => {
+                      setColSelectorOpen(prev => {
+                        // 열릴 때 colSelectorDeathRate를 현재 items에서 동기화
+                        if (!prev) {
+                          setColSelectorDeathRate(
+                            colSelectorItems.find(i => i.newName === 'Death_Rate')?.originalName ?? ''
+                          );
+                        }
+                        return !prev;
+                      });
+                    }}
                     className={`ml-1 px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 flex items-center gap-1 ${
                       colSelectorOpen
                         ? (isDark ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white')
@@ -1260,6 +1284,41 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                   </div>
                 </div>
 
+                {/* Death_Rate 열 지정 */}
+                <div className={`px-4 py-2.5 border-b ${isDark ? 'border-orange-800/40 bg-orange-950/20' : 'border-orange-200 bg-orange-50'}`}>
+                  <label className={`text-xs font-bold block mb-1 ${isDark ? 'text-orange-300' : 'text-orange-700'}`}>
+                    사망위험률 열 (Death_Rate)
+                  </label>
+                  <select
+                    value={colSelectorDeathRate}
+                    onChange={(e) => {
+                      const col = e.target.value;
+                      setColSelectorDeathRate(col);
+                      setColSelectorItems(prev => prev.map(item => {
+                        // 이전 Death_Rate 열 복원
+                        if (item.originalName === colSelectorDeathRate && item.newName === 'Death_Rate') {
+                          return { ...item, newName: item.originalName };
+                        }
+                        // 새 열 지정
+                        if (col && item.originalName === col) {
+                          return { ...item, selected: true, newName: 'Death_Rate' };
+                        }
+                        return item;
+                      }));
+                    }}
+                    className={`w-full text-xs rounded px-2 py-1 border focus:outline-none focus:ring-1 focus:ring-orange-500 ${
+                      isDark ? 'bg-gray-800 border-gray-600 text-gray-200' : 'bg-white border-gray-300 text-gray-700'
+                    }`}
+                  >
+                    <option value="">(선택 안 함)</option>
+                    {colSelectorItems
+                      .filter(i => i.originalName !== 'Age' && i.originalName !== 'Sex' && i.originalName !== 'Gender')
+                      .map(i => (
+                        <option key={i.originalName} value={i.originalName}>{i.originalName}</option>
+                      ))}
+                  </select>
+                </div>
+
                 {/* 열 목록 */}
                 <div className="flex-1 overflow-y-auto px-4 py-3 space-y-1.5">
                   {colSelectorItems.length === 0 ? (
@@ -1267,9 +1326,13 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                       위험률 파일을 먼저 불러오세요
                     </p>
                   ) : (
-                    colSelectorItems.map((item, idx) => (
+                    colSelectorItems.map((item, idx) => {
+                      const isDeathRateItem = item.originalName === colSelectorDeathRate;
+                      return (
                       <div key={idx} className={`flex items-center gap-2 px-2 py-1.5 rounded ${
-                        isDark ? 'hover:bg-gray-800' : 'hover:bg-violet-50'
+                        isDeathRateItem
+                          ? (isDark ? 'bg-orange-950/40 border border-orange-800/40' : 'bg-orange-50 border border-orange-200')
+                          : (isDark ? 'hover:bg-gray-800' : 'hover:bg-violet-50')
                       }`}>
                         {/* 순서 이동 */}
                         <div className="flex flex-col gap-0.5 flex-shrink-0">
@@ -1313,19 +1376,21 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                             <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>→</span>
                             <input
                               value={item.newName}
-                              onChange={e => handleColRename(idx, e.target.value)}
+                              onChange={e => !isDeathRateItem && handleColRename(idx, e.target.value)}
                               spellCheck={false}
                               placeholder={item.originalName}
-                              className={`font-mono text-xs rounded px-2 py-0.5 border w-32 focus:outline-none focus:ring-1 focus:ring-violet-500 ${
-                                isDark
-                                  ? 'bg-gray-800 border-gray-600 text-emerald-300'
-                                  : 'bg-gray-50 border-gray-300 text-indigo-700'
+                              disabled={isDeathRateItem}
+                              className={`font-mono text-xs rounded px-2 py-0.5 border w-32 focus:outline-none focus:ring-1 ${
+                                isDeathRateItem
+                                  ? (isDark ? 'bg-orange-900/30 border-orange-700 text-orange-200 cursor-not-allowed opacity-80' : 'bg-orange-100 border-orange-300 text-orange-700 cursor-not-allowed opacity-80')
+                                  : (isDark ? 'bg-gray-800 border-gray-600 text-emerald-300 focus:ring-violet-500' : 'bg-gray-50 border-gray-300 text-indigo-700 focus:ring-violet-500')
                               }`}
                             />
                           </div>
                         )}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 

@@ -46,6 +46,7 @@ const HEADER_MAP: Record<string, ModuleType> = {
   load: ModuleType.LoadData,
   위험률로드: ModuleType.LoadData,
   selectriskrates: ModuleType.SelectRiskRates,
+  ratingbasisbuilder: ModuleType.SelectRiskRates,
   연령성별매칭: ModuleType.SelectRiskRates,
   agegendermatching: ModuleType.SelectRiskRates,
   selectdata: ModuleType.SelectData,
@@ -130,12 +131,16 @@ function buildSelectRiskRatesParams(lines: Array<{ output: string; formula: stri
     ageColumn: 'Age',
     genderColumn: 'Sex',
     excludeNonNumericRows: true,
+    columnRenames: [] as Array<{ from: string; to: string }>,
   };
   for (const { output, formula } of lines) {
     const key = output.toLowerCase();
-    if (key === 'agecol' || key === 'agecol' || key === '나이컬럼') params.ageColumn = formula;
+    if (key === 'agecol' || key === '나이컬럼') params.ageColumn = formula;
     else if (key === 'gendercol' || key === '성별컬럼') params.genderColumn = formula;
-    // 나머지: 출력열 = 입력열 → column rename (informational, stored separately)
+    else if (output && formula) {
+      // 열 이름 변경: 출력열이름 = 원본열이름 → 실행 시 입력 데이터에 존재해야 함
+      params.columnRenames.push({ from: formula.trim(), to: output.trim() });
+    }
   }
   return params;
 }
@@ -145,9 +150,9 @@ function buildSelectDataParams(lines: Array<{ output: string; formula: string }>
   const colsLine = lines.find((l) => l.output.toLowerCase() === 'cols');
   if (colsLine) {
     const names = colsLine.formula.split(',').map((s) => s.trim()).filter(Boolean);
-    return {
-      selections: names.map((n) => ({ originalName: n, selected: true, newName: n })),
-    };
+    const selections = names.map((n) => ({ originalName: n, selected: true, newName: n }));
+    const drSel = selections.find((s) => s.newName === 'Death_Rate');
+    return { selections, deathRateColumn: drSel?.originalName ?? '' };
   }
   // output = input 형태로 지정된 경우
   const selections = lines.map(({ output, formula }) => ({
@@ -155,7 +160,9 @@ function buildSelectDataParams(lines: Array<{ output: string; formula: string }>
     selected: true,
     newName: output,
   }));
-  return { selections };
+  // Death_Rate로 이름 변경된 열을 deathRateColumn으로 자동 감지
+  const drSel = selections.find((s) => s.newName === 'Death_Rate');
+  return { selections, deathRateColumn: drSel?.originalName ?? '' };
 }
 
 function buildRateModifierParams(lines: Array<{ output: string; formula: string }>) {
@@ -168,10 +175,18 @@ function buildRateModifierParams(lines: Array<{ output: string; formula: string 
 }
 
 function buildCalculateSurvivorsParams(lines: Array<{ output: string; formula: string }>) {
-  // 예: lx_Mortality = lx(Death_Rate)  → name = "Mortality"
+  // 예: mortalityCol = Death_Rate       → mortalityColumn = 'Death_Rate'
+  //     lx_Mortality = lx(Death_Rate)  → name = "Mortality"
   //     lx = 100000                    → fixedValue = 100000
+  let mortalityColumn = 'None';
   const calculations: any[] = [];
   for (const { output, formula } of lines) {
+    const key = output.toLowerCase().replace(/\s/g, '');
+    // mortalityCol 지정 라인
+    if (key === 'mortalitycol' || key === '사망률열' || key === '위험률열') {
+      mortalityColumn = formula.trim();
+      continue;
+    }
     const lxKey = output.toLowerCase();
     if (!(lxKey === 'lx' || lxKey.startsWith('lx'))) continue;
 
@@ -202,7 +217,7 @@ function buildCalculateSurvivorsParams(lines: Array<{ output: string; formula: s
   }
   return {
     ageColumn: 'Age',
-    mortalityColumn: 'None',
+    mortalityColumn,
     addFixedLx: false,
     calculations,
   };
@@ -279,14 +294,16 @@ function buildPremiumComponentParams(lines: Array<{ output: string; formula: str
   for (const { output, formula } of lines) {
     const outLow = output.toLowerCase();
     if (outLow === 'nnx' || outLow.startsWith('nnx')) {
-      // NNX = Nx[0] - Nx[m]  → nxColumn 추출
-      const colMatch = formula.match(/([A-Za-z_]\w*)\[/);
-      const nxCol = colMatch ? colMatch[1] : 'Nx_Mortality';
+      // Diff(Nx_col, m) 또는 구형 Nx_col[0] - Nx_col[m] → nxColumn 추출
+      const diffMatch = formula.match(/Diff\s*\(\s*([A-Za-z_]\w*)\s*,/i);
+      const legacyMatch = formula.match(/([A-Za-z_]\w*)\[/);
+      const nxCol = diffMatch ? diffMatch[1] : (legacyMatch ? legacyMatch[1] : 'Nx_Mortality');
       nnxCalculations.push({ id: `nnx-${nnxCalculations.length}`, nxColumn: nxCol });
     } else if (outLow === 'bpv' || outLow.startsWith('bpv_') || outLow === 'sumx' || outLow.startsWith('sumx')) {
-      // BPV_Mortality = (Mx_Mortality[0] - Mx_Mortality[n]) * 10000  → mxColumn + amount 추출
-      const colMatch = formula.match(/([A-Za-z_]\w*)\[/);
-      const mxCol = colMatch ? colMatch[1] : 'Mx_Mortality';
+      // Diff(Mx_col, n) * amount 또는 구형 (Mx_col[0] - Mx_col[n]) * amount → mxColumn + amount 추출
+      const diffMatch = formula.match(/Diff\s*\(\s*([A-Za-z_]\w*)\s*,/i);
+      const legacyMatch = formula.match(/([A-Za-z_]\w*)\[/);
+      const mxCol = diffMatch ? diffMatch[1] : (legacyMatch ? legacyMatch[1] : 'Mx_Mortality');
       const amtMatch = formula.match(/\)\s*\*\s*([\d,]+)|\*\s*([\d,]+)/);
       const amtStr = amtMatch ? (amtMatch[1] ?? amtMatch[2]) : '10000';
       const amount = Number(amtStr.replace(/,/g, '')) || 10000;
@@ -514,7 +531,7 @@ function stripVarBrackets(formula: string): string {
 // ── DSL 섹션 레이블 맵 (모듈타입 → ## 헤더명)
 export const DSL_MODULE_LABELS: Partial<Record<ModuleType, string>> = {
   [ModuleType.LoadData]: 'LoadData',
-  [ModuleType.SelectRiskRates]: 'SelectRiskRates',
+  [ModuleType.SelectRiskRates]: 'RatingBasisBuilder',
   [ModuleType.SelectData]: 'SelectData',
   [ModuleType.RateModifier]: 'RateModifier',
   [ModuleType.CalculateSurvivors]: 'CalculateSurvivors',
@@ -581,8 +598,8 @@ export function generateDSL(
 
   const order: ModuleType[] = [
     ModuleType.LoadData,
-    ModuleType.SelectRiskRates,
     ModuleType.SelectData,
+    ModuleType.SelectRiskRates,
     ModuleType.RateModifier,
     ModuleType.CalculateSurvivors,
     ModuleType.ClaimsCalculator,
@@ -603,18 +620,19 @@ export function generateDSL(
       '// 위험률 CSV 파일을 불러옵니다',
     ],
     [ModuleType.SelectRiskRates]: [
-      '// 가입연령(ageCol)·성별(genderCol)로 위험률 행을 선택합니다',
-      '// 열 이름 변경: 출력열이름 = 원본열이름',
+      '// 가입연령(ageCol)·성별(genderCol)로 보험기간 n 동안의 위험률 행을 선택합니다',
+      '// 할인율(i_prem, i_claim)을 자동으로 계산합니다',
     ],
     [ModuleType.SelectData]: [
       '// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)',
+      '// Death_Rate로 이름 변경된 열은 Survivors Calculator의 사망위험률로 자동 적용됩니다',
     ],
     [ModuleType.RateModifier]: [
-      '// 이자계수를 계산합니다',
-      '// i_prem: 보험료 이자계수 (납입 시점 현가 계수)',
-      '// i_claim: 급부 이자계수 (지급 시점 현가 계수)',
+      '// 위험률 수정이 필요한 경우 수식을 추가하세요. 기본값은 아무 작업도 하지 않습니다.',
+      '// 예: Modified_Rate = Death_Rate * 1.5',
     ],
     [ModuleType.CalculateSurvivors]: [
+      '// mortalityCol: 사망위험률 열 이름 (Mortality Rate Column 항목과 연동)',
       '// lx(위험률): 나이별 생존자수  [초기값 lx[0] = 100,000]',
       '//   lx[t] = lx[t-1] × (1 - 위험률[t])',
       '//   다중감소 예: lx(사망률, 해약률)',
@@ -631,9 +649,9 @@ export function generateDSL(
       '// 공제(대기기간) 옵션: cumsum_rev(Cx, deduct=0.25)  ← 25% 공제(3개월 대기)',
     ],
     [ModuleType.PremiumComponent]: [
-      '// NNX = Nx[0] - Nx[m]',
+      '// NNX = Diff(Nx, m)  ← Nx[0] - Nx[m]  (납입기간 보험료 연금현가)',
       '//   생성변수: NNX(Year), NNX(Half), NNX(Quarter), NNX(Month)',
-      '// BPV = (Mx[0] - Mx[n]) × 보험가입금액  (Benefit Present Value)',
+      '// BPV = Diff(Mx, n) × 보험가입금액  ← (Mx[0] - Mx[n]) × 금액',
     ],
     [ModuleType.AdditionalName]: [
       '// 영업보험료 계산용 사업비 계수 (0이면 사업비 없음)',
@@ -700,6 +718,9 @@ export function generateDSL(
         break;
 
       case ModuleType.CalculateSurvivors:
+        if (par.mortalityColumn && par.mortalityColumn !== 'None') {
+          lines.push(`mortalityCol = ${par.mortalityColumn}`);
+        }
         if (Array.isArray(par.calculations)) {
           for (const c of par.calculations) {
             const prefix = c.name ? `lx_${c.name}` : 'lx';
@@ -729,16 +750,18 @@ export function generateDSL(
       case ModuleType.NxMxCalculator:
         if (Array.isArray(par.nxCalculations)) {
           for (const c of par.nxCalculations) {
-            lines.push(`Nx_${c.name} = cumsum_rev(${c.baseColumn})`);
+            const nxName = c.name || c.baseColumn.replace(/^Dx_/, '');
+            lines.push(`Nx_${nxName} = cumsum_rev(${c.baseColumn})`);
           }
         }
         if (Array.isArray(par.mxCalculations)) {
           for (const c of par.mxCalculations) {
+            const mxName = c.name || c.baseColumn.replace(/^Cx_/, '');
             // deductibleType이 '0'이 아니면 deduct 파라미터 포함
             const deductSuffix = (c.deductibleType && c.deductibleType !== '0')
               ? `, deduct=${c.deductibleType === 'custom' ? (c.customDeductible ?? 0) : c.deductibleType}`
               : '';
-            lines.push(`Mx_${c.name} = cumsum_rev(${c.baseColumn}${deductSuffix})`);
+            lines.push(`Mx_${mxName} = cumsum_rev(${c.baseColumn}${deductSuffix})`);
           }
         }
         if (!par.nxCalculations?.length && !par.mxCalculations?.length) {
@@ -751,18 +774,18 @@ export function generateDSL(
         if (Array.isArray(par.nnxCalculations) && par.nnxCalculations.length > 0) {
           for (const c of par.nnxCalculations) {
             const baseName = c.nxColumn.replace(/^Nx_/, '');
-            lines.push(`NNX_${baseName} = ${c.nxColumn}[0] - ${c.nxColumn}[m]`);
+            lines.push(`NNX_${baseName} = Diff(${c.nxColumn}, m)`);
           }
         } else {
-          lines.push(`NNX_Mortality = Nx_Mortality[0] - Nx_Mortality[m]`);
+          lines.push(`NNX_Mortality = Diff(Nx_Mortality, m)`);
         }
         if (Array.isArray(par.sumxCalculations) && par.sumxCalculations.length > 0) {
           for (const c of par.sumxCalculations) {
             const bpvBase = c.mxColumn.replace(/^Mx_/, '');
-            lines.push(`BPV_${bpvBase} = (${c.mxColumn}[0] - ${c.mxColumn}[n]) * ${c.amount ?? 10000}`);
+            lines.push(`BPV_${bpvBase} = Diff(${c.mxColumn}, n) * ${c.amount ?? 10000}`);
           }
         } else {
-          lines.push(`BPV_Mortality = (Mx_Mortality[0] - Mx_Mortality[n]) * 10000`);
+          lines.push(`BPV_Mortality = Diff(Mx_Mortality, n) * 10000`);
         }
         break;
 
@@ -860,23 +883,55 @@ export function extractFormulaVarRefs(formula: string): string[] {
 export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
   const errors: DSLFlowError[] = [];
 
-  // 데이터 소스에서 기본 제공되는 변수들 (CSV 컬럼, 정책 파라미터)
+  // 정책 파라미터 및 SelectRiskRates가 자동 생성하는 변수만 초기 정의
+  // CSV 열 이름은 SelectData에서 명시적으로 선택된 것만 포함됨
   const defined = new Set<string>([
-    'Age', 'Sex', 'i_prem', 'i_claim',
-    'Death_Rate', 'CI_Rate', 'Disability_Rate', 'Lapse_Rate',
-    'Male_Mortality', 'Female_Mortality',
+    'i_prem', 'i_claim',
     'entryAge', 'gender', 'paymentTerm', 'interestRate', 'policyTerm',
   ]);
 
-  // SelectData/SelectRiskRates의 원본 열 이름도 "정의됨"으로 처리
+  // ── SelectData 처리: 선택된 출력 열 이름(LHS)만 defined에 추가
+  // selectDataOutputCols = null이면 SelectData 블록 없음
+  let selectDataOutputCols: Set<string> | null = null;
+
   for (const section of model.sections) {
-    if (
-      section.type === ModuleType.SelectData ||
-      section.type === ModuleType.SelectRiskRates
-    ) {
-      for (const { formula } of section.lines) {
-        const f = formula.trim();
-        if (/^[A-Za-z_]\w*$/.test(f)) defined.add(f);
+    if (!section.include || section.type !== ModuleType.SelectData) continue;
+    selectDataOutputCols = new Set<string>();
+    for (const { output } of section.lines) {
+      if (output) {
+        selectDataOutputCols.add(output);
+        defined.add(output);
+      }
+    }
+  }
+
+  // SelectData가 없으면 하위 호환성을 위해 기본 열 이름을 허용
+  if (selectDataOutputCols === null) {
+    ['Age', 'Sex', 'Death_Rate', 'CI_Rate', 'Disability_Rate', 'Lapse_Rate',
+      'Male_Mortality', 'Female_Mortality'].forEach((col) => defined.add(col));
+  }
+
+  // ── SelectRiskRates 처리: SelectData 출력 열 기준으로 formula(RHS) 검증
+  for (const section of model.sections) {
+    if (!section.include || section.type !== ModuleType.SelectRiskRates) continue;
+    for (const { output, formula } of section.lines) {
+      const formulaTrimmed = formula.trim();
+      // formula가 있고 SelectData가 존재한다면 → SelectData 출력 열에 있어야 함
+      if (formulaTrimmed && selectDataOutputCols !== null) {
+        if (!selectDataOutputCols.has(formulaTrimmed)) {
+          errors.push({
+            module: 'Rating Basis Builder',
+            varName: formulaTrimmed,
+            message: `[Rating Basis Builder] '${formulaTrimmed}' 열이 SelectData에서 선택되지 않았습니다`,
+            lineNumber: section.lines.find((l) => l.output === output)?.lineNumber ?? 0,
+          });
+        }
+      }
+      // output(LHS)는 SelectRiskRates의 출력 열로 등록
+      const key = output.toLowerCase();
+      const isSpecialKey = key === 'agecol' || key === 'gendercol' || key === '나이컬럼' || key === '성별컬럼';
+      if (output && !isSpecialKey) {
+        defined.add(output);
       }
     }
   }
@@ -886,7 +941,7 @@ export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
 
   const SECTION_LABELS: Partial<Record<ModuleType, string>> = {
     [ModuleType.LoadData]: '위험률 로드',
-    [ModuleType.SelectRiskRates]: '연령 성별 매칭',
+    [ModuleType.SelectRiskRates]: 'Rating Basis Builder',
     [ModuleType.SelectData]: '데이터 선택',
     [ModuleType.RateModifier]: '요율 수정',
     [ModuleType.CalculateSurvivors]: '생존자 계산',
@@ -899,7 +954,7 @@ export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
     [ModuleType.ReserveCalculator]: '준비금',
   };
 
-  // 앞 3개 데이터 모듈은 흐름 검사 없이 출력만 등록
+  // 앞 3개 데이터 모듈은 흐름 검사 없이 출력만 등록 (이미 위에서 처리됨)
   const DATA_MODULES = new Set<ModuleType>([
     ModuleType.LoadData,
     ModuleType.SelectRiskRates,
@@ -954,22 +1009,29 @@ file = Risk_Rates.csv
 
 ## SelectData
 // 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)
+// Death_Rate로 이름 변경된 열은 Survivors Calculator의 사망위험률로 자동 적용됩니다
 // 위험률 파일을 불러오면 열 선택 버튼으로 추가하세요
 Age = Age
 Sex = Sex
-
-## SelectRiskRates
-// 가입연령(ageCol)·성별(genderCol)로 위험률 행을 선택합니다
-// 열 이름 변경: 출력열이름 = 원본열이름
-ageCol    = Age
-genderCol = Sex
 Death_Rate = Male_Mortality
 
+## RatingBasisBuilder
+// 가입연령(ageCol)·성별(genderCol)로 보험기간 n 동안의 위험률 행을 선택합니다
+// 할인율(i_prem, i_claim)을 자동으로 계산합니다
+ageCol    = Age
+genderCol = Sex
+
+## RateModifier
+// 위험률 수정이 필요한 경우 수식을 추가하세요. 기본값은 아무 작업도 하지 않습니다.
+// 예: Modified_Rate = Death_Rate * 1.5
+
 ## CalculateSurvivors
+// mortalityCol: 사망위험률 열 이름 (Mortality Rate Column 항목과 연동)
 // lx(위험률): 나이별 생존자수  [초기값 lx[0] = 100,000]
 //   lx[t] = lx[t-1] × (1 - 위험률[t])
 //   다중감소 예: lx(사망률, 해약률)
 // Dx: 할인 생존자수 = lx × i_prem
+mortalityCol = Death_Rate
 lx_Mortality = lx(Death_Rate)
 Dx_Mortality = lx_Mortality * i_prem
 
@@ -988,11 +1050,11 @@ Nx_Mortality = cumsum_rev(Dx_Mortality)
 Mx_Mortality = cumsum_rev(Cx_Mortality)
 
 ## PremiumComponent
-// NNX = Nx[0] - Nx[m]
+// NNX = Diff(Nx, m)  ← Nx[0] - Nx[m]  (납입기간 보험료 연금현가)
 //   생성변수: NNX(Year), NNX(Half), NNX(Quarter), NNX(Month)
-// BPV = (Mx[0] - Mx[n]) × 보험가입금액  (Benefit Present Value)
-NNX_Mortality = Nx_Mortality[0] - Nx_Mortality[m]
-BPV_Mortality = (Mx_Mortality[0] - Mx_Mortality[n]) * 10000
+// BPV = Diff(Mx, n) × 보험가입금액  ← (Mx[0] - Mx[n]) × 금액
+NNX_Mortality = Diff(Nx_Mortality, m)
+BPV_Mortality = Diff(Mx_Mortality, n) * 10000
 
 ## AdditionalName
 // 영업보험료 계산용 사업비 계수 (0이면 사업비 없음)

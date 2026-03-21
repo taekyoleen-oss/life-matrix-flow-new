@@ -33,8 +33,8 @@ const loadXLSX = async () => {
 
 interface ParameterInputModalProps {
   module: CanvasModule;
-  onClose: (shouldRestore?: boolean) => void;
-  updateModuleParameters: (id: string, newParams: Record<string, any>) => void;
+  onClose: (shouldRestore?: boolean, skipStatusReset?: boolean) => void;
+  updateModuleParameters: (id: string, newParams: Record<string, any>, replace?: boolean) => void;
   modules: CanvasModule[];
   connections: Connection[];
   projectName: string;
@@ -44,7 +44,7 @@ interface ParameterInputModalProps {
 }
 
 export const PropertyInput: React.FC<{
-  label: string;
+  label?: string;
   value: any;
   onChange: (value: any) => void;
   type?: string;
@@ -63,11 +63,9 @@ export const PropertyInput: React.FC<{
   compact = false,
 }) => (
   <div>
-    <label
-      className={`block ${compact ? "text-xs" : "text-xs"} text-gray-400 mb-1`}
-    >
-      {label}
-    </label>
+    {label && (
+      <label className={`block text-xs text-gray-400 mb-1`}>{label}</label>
+    )}
     <input
       type={type}
       value={value}
@@ -87,7 +85,7 @@ export const PropertyInput: React.FC<{
 );
 
 export const PropertySelect: React.FC<{
-  label: string;
+  label?: string;
   value: any;
   onChange: (value: string) => void;
   options: { label: string; value: string }[] | string[];
@@ -95,11 +93,9 @@ export const PropertySelect: React.FC<{
   compact?: boolean;
 }> = ({ label, value, onChange, options, placeholder, compact = false }) => (
   <div>
-    <label
-      className={`block ${compact ? "text-xs" : "text-xs"} text-gray-400 mb-1`}
-    >
-      {label}
-    </label>
+    {label && (
+      <label className={`block text-xs text-gray-400 mb-1`}>{label}</label>
+    )}
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
@@ -1788,30 +1784,52 @@ const SelectDataParams: React.FC<{
     }
   }, [inputColumns.join(",")]);
 
+  const deathRateColumn: string = parameters.deathRateColumn || "";
+
   const handleSelectionChange = (index: number, selected: boolean) => {
     const newSelections = [...selections];
     newSelections[index] = { ...newSelections[index], selected };
     setSelections(newSelections);
-    onParametersChange({ selections: newSelections });
+    onParametersChange({ selections: newSelections, deathRateColumn });
   };
 
   const handleNameChange = (index: number, newName: string) => {
     const newSelections = [...selections];
     newSelections[index] = { ...newSelections[index], newName };
     setSelections(newSelections);
-    onParametersChange({ selections: newSelections });
+    onParametersChange({ selections: newSelections, deathRateColumn });
   };
 
   const handleSelectAll = () => {
     const newSelections = selections.map((s) => ({ ...s, selected: true }));
     setSelections(newSelections);
-    onParametersChange({ selections: newSelections });
+    onParametersChange({ selections: newSelections, deathRateColumn });
   };
 
   const handleDeselectAll = () => {
     const newSelections = selections.map((s) => ({ ...s, selected: false }));
     setSelections(newSelections);
-    onParametersChange({ selections: newSelections });
+    onParametersChange({ selections: newSelections, deathRateColumn });
+  };
+
+  const handleDeathRateColumnChange = (originalColName: string) => {
+    let newSelections = selections.map((s) => {
+      // 이전 Death_Rate 지정 열의 이름 복원
+      if (s.originalName === deathRateColumn && s.newName === "Death_Rate") {
+        return { ...s, newName: s.originalName };
+      }
+      return s;
+    });
+    // 새 열을 선택 + 이름을 Death_Rate로 고정
+    if (originalColName) {
+      newSelections = newSelections.map((s) =>
+        s.originalName === originalColName
+          ? { ...s, selected: true, newName: "Death_Rate" }
+          : s
+      );
+    }
+    setSelections(newSelections);
+    onParametersChange({ selections: newSelections, deathRateColumn: originalColName });
   };
 
   if (!dataSource) {
@@ -1824,6 +1842,28 @@ const SelectDataParams: React.FC<{
 
   return (
     <div>
+      {/* Death_Rate 열 지정 */}
+      <div className="mb-4 p-3 bg-orange-950/30 border border-orange-800/40 rounded-lg">
+        <label className="text-xs text-orange-300 font-bold block mb-1.5">
+          사망위험률 열 (Death_Rate)
+        </label>
+        <p className="text-xs text-gray-400 mb-2">
+          선택한 열은 출력 시 <span className="text-orange-300 font-mono">Death_Rate</span>로 자동 이름 변경되며, Survivors Calculator의 Mortality Rate Column에 적용됩니다.
+        </p>
+        <select
+          value={deathRateColumn}
+          onChange={(e) => handleDeathRateColumnChange(e.target.value)}
+          className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+        >
+          <option value="">(선택 안 함)</option>
+          {inputColumns
+            .filter((col) => col !== "Age" && col !== "Sex" && col !== "Gender")
+            .map((col) => (
+              <option key={col} value={col}>{col}</option>
+            ))}
+        </select>
+      </div>
+
       <h4 className="text-sm text-gray-400 font-bold mb-2">
         Column Selections
       </h4>
@@ -1850,39 +1890,51 @@ const SelectDataParams: React.FC<{
           <label className="text-sm text-gray-400 font-bold">New Name</label>
         </div>
       </div>
-      <div className="space-y-2 max-h-80 overflow-y-auto pr-2 panel-scrollbar">
-        {selections.map((selection, index) => (
-          <div
-            key={selection.originalName}
-            className="grid grid-cols-[auto,1fr] gap-x-3 items-center bg-gray-900/50 p-2 rounded-md"
-          >
-            <input
-              type="checkbox"
-              checked={selection.selected}
-              onChange={(e) => handleSelectionChange(index, e.target.checked)}
-              className="form-checkbox h-4 w-4 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
-            />
-            <div className="grid grid-cols-2 gap-x-3">
-              <span
-                className="text-sm text-gray-300 truncate bg-gray-700 px-2 py-1.5 rounded-md border border-gray-600"
-                title={selection.originalName}
-              >
-                {selection.originalName}
-              </span>
+      <div className="space-y-2 max-h-72 overflow-y-auto pr-2 panel-scrollbar">
+        {selections.map((selection, index) => {
+          const isDeathRate = selection.originalName === deathRateColumn;
+          const isLocked =
+            selection.originalName === "Age" ||
+            selection.originalName === "Gender" ||
+            isDeathRate;
+          return (
+            <div
+              key={selection.originalName}
+              className={`grid grid-cols-[auto,1fr] gap-x-3 items-center p-2 rounded-md ${
+                isDeathRate
+                  ? "bg-orange-950/40 border border-orange-800/40"
+                  : "bg-gray-900/50"
+              }`}
+            >
               <input
-                type="text"
-                value={selection.newName}
-                onChange={(e) => handleNameChange(index, e.target.value)}
-                className="bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="New column name"
-                disabled={
-                  selection.originalName === "Age" ||
-                  selection.originalName === "Gender"
-                }
+                type="checkbox"
+                checked={selection.selected}
+                onChange={(e) => handleSelectionChange(index, e.target.checked)}
+                className="form-checkbox h-4 w-4 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
               />
+              <div className="grid grid-cols-2 gap-x-3">
+                <span
+                  className="text-sm text-gray-300 truncate bg-gray-700 px-2 py-1.5 rounded-md border border-gray-600"
+                  title={selection.originalName}
+                >
+                  {selection.originalName}
+                </span>
+                <input
+                  type="text"
+                  value={selection.newName}
+                  onChange={(e) => handleNameChange(index, e.target.value)}
+                  className={`border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+                    isDeathRate
+                      ? "bg-orange-900/30 border-orange-700 text-orange-200 focus:ring-orange-500"
+                      : "bg-gray-700 border-gray-600 focus:ring-blue-500"
+                  }`}
+                  placeholder="New column name"
+                  disabled={isLocked}
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -2684,11 +2736,14 @@ const CalculateSurvivorsParams: React.FC<{
 
     const newCalculations = (calculations || []).map((calc: any) => {
       if (calc.id === id && !(calc.decrementRates || []).includes(rateToAdd)) {
-        // Add new rate at the end (don't sort) to maintain insertion order
         const newRates = [...(calc.decrementRates || []), rateToAdd];
+        const autoName = newRates.join("_");
+        const oldAutoName = (calc.decrementRates || []).join("_");
+        // 사용자가 이름을 직접 편집하지 않은 경우(현재 이름이 자동생성과 같거나 비어있으면)만 자동 업데이트
+        const shouldAutoUpdate = !calc.name || calc.name === oldAutoName;
         return {
           ...calc,
-          name: newRates.join("_"),
+          name: shouldAutoUpdate ? autoName : calc.name,
           decrementRates: newRates,
         };
       }
@@ -2696,7 +2751,6 @@ const CalculateSurvivorsParams: React.FC<{
     });
     updateCalculations(newCalculations);
 
-    // Clear the selected rate after adding to allow adding the same rate again if needed
     setSelectedRates((prev) => ({
       ...prev,
       [id]: "",
@@ -2709,9 +2763,11 @@ const CalculateSurvivorsParams: React.FC<{
         const newRates = (calc.decrementRates || []).filter(
           (r: string) => r !== rate
         );
+        const autoName = (calc.decrementRates || []).join("_");
+        const shouldAutoUpdate = !calc.name || calc.name === autoName;
         return {
           ...calc,
-          name: newRates.join("_"),
+          name: shouldAutoUpdate ? newRates.join("_") : calc.name,
           decrementRates: newRates,
         };
       }
@@ -2833,19 +2889,19 @@ const CalculateSurvivorsParams: React.FC<{
                         </div>
                       </div>
                     ) : (
-                      /* ── 감소율 UI (기존) */
+                      /* ── 감소율 UI */
                       <div className="flex items-center gap-2 w-full min-w-0">
                         <div
                           className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0"
-                          title={`Resulting column name: ${lxColName}`}
+                          title={`출력 열 이름: ${lxColName}`}
                         >
                           <span className="text-gray-400">lx_</span>
                           <input
                             type="text"
-                            placeholder="<auto-generated>"
+                            placeholder="(자동생성)"
                             value={calc.name}
-                            readOnly
-                            className="w-32 bg-transparent focus:outline-none text-gray-400 cursor-default"
+                            onChange={(e) => handleFixedNameChange(calc.id, e.target.value)}
+                            className="w-32 bg-transparent focus:outline-none text-blue-300"
                           />
                         </div>
 
@@ -2912,15 +2968,15 @@ const CalculateSurvivorsParams: React.FC<{
                       </div>
                     )}
 
-                    <div className="text-xs text-gray-500">
-                      Outputs:{" "}
+                    <div className="text-[10px] text-gray-500">
+                      →{" "}
                       <span className="text-blue-300">{lxColName}</span>
                       {!isFixed && (
                         <>, <span className="text-blue-300">{dxColName}</span></>
                       )}
                       {isFixed && (
                         <span className="ml-2 text-emerald-600">
-                          — 모든 행: {calc.fixedValue?.toLocaleString()}
+                          (모든 행: {calc.fixedValue?.toLocaleString()})
                         </span>
                       )}
                     </div>
@@ -3035,10 +3091,9 @@ const ClaimsCalculatorParams: React.FC<{
     const newCalculations = (calculations || []).map((c: any) => {
       if (c.id === id) {
         const updatedCalc = { ...c, [field]: value };
-        // If updating riskRateColumn, always auto-fill name to match selection
-        // This ensures name always reflects the selected riskRateColumn
-        if (field === "riskRateColumn") {
-          updatedCalc.name = value || updatedCalc.name;
+        // riskRateColumn 변경 시 name이 비어있을 때만 자동 설정 (사용자 편집값 유지)
+        if (field === "riskRateColumn" && !c.name) {
+          updatedCalc.name = value;
         }
         return updatedCalc;
       }
@@ -3108,52 +3163,17 @@ const ClaimsCalculatorParams: React.FC<{
     calculations?.length || 0,
   ]);
 
-  // Sync name with riskRateColumn when riskRateColumn changes
+  // name이 비어있는 기존 calculation에만 riskRateColumn으로 초기화 (사용자 편집값은 유지)
   useEffect(() => {
     if (!calculations || calculations.length === 0) return;
-
-    let hasChange = false;
-    const updatedCalculations = calculations.map((calc: any) => {
-      // If riskRateColumn is set but name is different, sync name with riskRateColumn
-      if (calc.riskRateColumn && calc.name !== calc.riskRateColumn) {
-        hasChange = true;
-        return {
-          ...calc,
-          name: calc.riskRateColumn,
-        };
-      }
-      return calc;
-    });
-
-    if (hasChange) {
-      updateCalculations(updatedCalculations);
-    }
-  }, [
-    // React when riskRateColumn changes
-    calculations?.map((c: any) => `${c.id}:${c.riskRateColumn}`).join(","),
-  ]);
-
-  // When data is loaded (riskOptions become available), update name from riskRateColumn
-  // This handles the case where calculations exist before data is loaded
-  // Force update name whenever data loads or riskOptions change
-  useEffect(() => {
-    if (!calculations || calculations.length === 0) return;
-    // Only proceed when data is actually loaded
     if (!dataSource || riskOptions.length === 0) return;
 
     let hasChange = false;
     const updatedCalculations = calculations.map((calc: any) => {
-      // If riskRateColumn is set, always sync name with riskRateColumn
-      // This ensures name reflects the actual riskRateColumn value from loaded data
-      if (calc.riskRateColumn) {
-        // Always update if name doesn't match riskRateColumn
-        if (calc.name !== calc.riskRateColumn) {
-          hasChange = true;
-          return {
-            ...calc,
-            name: calc.riskRateColumn,
-          };
-        }
+      // 이름이 비어있을 때만 riskRateColumn으로 초기 설정
+      if (!calc.name && calc.riskRateColumn) {
+        hasChange = true;
+        return { ...calc, name: calc.riskRateColumn };
       }
       return calc;
     });
@@ -3161,13 +3181,7 @@ const ClaimsCalculatorParams: React.FC<{
     if (hasChange) {
       updateCalculations(updatedCalculations);
     }
-  }, [
-    // React when data is loaded (riskOptions become available)
-    riskOptions.join(","),
-    dataSource?.columns?.length || 0,
-    // Also include calculations to catch when they're loaded from saved state
-    calculations?.length || 0,
-  ]);
+  }, [riskOptions.join(","), dataSource?.columns?.length || 0]);
 
   if (!dataSource) {
     return (
@@ -3195,55 +3209,46 @@ const ClaimsCalculatorParams: React.FC<{
               <XMarkIcon className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-2 w-full mb-2">
-              <div
-                className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px]"
-                title={`Resulting prefix name: dx_${
-                  calc.name || calc.riskRateColumn
-                }`}
-              >
-                <span className="text-gray-400 mr-1">Name:</span>
+            {/* 단일 행: [출력 이름 편집] ← [lx 콤보] [q 콤보] */}
+            <div className="flex items-center gap-1.5 w-full">
+              <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1 h-[32px] flex-shrink-0">
+                <span className="text-gray-500 text-xs mr-0.5">dx_/Cx_</span>
                 <input
                   type="text"
-                  placeholder={calc.riskRateColumn || "Optional Name"}
+                  placeholder={calc.riskRateColumn || "이름"}
                   value={calc.name || ""}
                   onChange={(e) =>
                     handleUpdateCalculation(calc.id, "name", e.target.value)
                   }
-                  className="w-32 bg-transparent focus:outline-none text-gray-200 placeholder-gray-500"
+                  className="w-24 bg-transparent focus:outline-none text-blue-300 text-xs font-mono"
+                />
+              </div>
+              <span className="text-gray-500 text-xs shrink-0">←</span>
+              <div className="flex-1 min-w-0">
+                <PropertySelect
+                  label="lx"
+                  value={calc.lxColumn}
+                  onChange={(v) => handleUpdateCalculation(calc.id, "lxColumn", v)}
+                  options={lxOptions}
+                  placeholder="lx..."
+                  compact={true}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <PropertySelect
+                  label="q (위험률)"
+                  value={calc.riskRateColumn}
+                  onChange={(v) => handleUpdateCalculation(calc.id, "riskRateColumn", v)}
+                  options={riskOptions}
+                  placeholder="rate..."
+                  compact={true}
                 />
               </div>
             </div>
-
-            <div className="flex gap-4 items-center w-full">
-              <PropertySelect
-                label="Survivors (lx) Column"
-                value={calc.lxColumn}
-                onChange={(v) =>
-                  handleUpdateCalculation(calc.id, "lxColumn", v)
-                }
-                options={lxOptions}
-                placeholder="Select lx..."
-              />
-              <PropertySelect
-                label="Risk Rate Column (q)"
-                value={calc.riskRateColumn}
-                onChange={(v) =>
-                  handleUpdateCalculation(calc.id, "riskRateColumn", v)
-                }
-                options={riskOptions}
-                placeholder="Select rate..."
-              />
-            </div>
-            <div className="text-xs text-gray-500">
-              Outputs:{" "}
-              <span className="text-blue-300">
-                dx_{calc.name || calc.riskRateColumn || "?"}
-              </span>
-              ,{" "}
-              <span className="text-blue-300">
-                Cx_{calc.name || calc.riskRateColumn || "?"}
-              </span>
+            <div className="text-[10px] text-gray-500 pl-1">
+              → <span className="text-blue-300">dx_{calc.name || calc.riskRateColumn || "?"}</span>
+              {", "}
+              <span className="text-blue-300">Cx_{calc.name || calc.riskRateColumn || "?"}</span>
             </div>
           </div>
         ))}
@@ -3446,9 +3451,37 @@ const NxMxCalculatorParams: React.FC<{
           {nxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 p-2 rounded-md border border-gray-600 flex items-center gap-2 relative"
+              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600"
             >
-              <div className="absolute top-1.5 right-1.5 flex items-center gap-2">
+              {/* 단일 행: [출력 textbox] ← [Dx 콤보] [toggle] [삭제] */}
+              <div className="flex items-center gap-1.5">
+                {/* 출력 변수 textbox */}
+                <div className="flex items-center gap-0.5 w-28 shrink-0">
+                  <span className="text-[10px] text-gray-500 shrink-0">Nx_</span>
+                  <input
+                    className={`flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-[11px] font-mono ${calc.active !== false ? "text-blue-300" : "text-gray-500"}`}
+                    value={calc.name || calc.baseColumn.replace(/^Dx_/, "")}
+                    onChange={(e) =>
+                      handleUpdate("nxCalculations", calc.id, { name: e.target.value })
+                    }
+                  />
+                </div>
+                {/* 화살표 */}
+                <span className="text-gray-500 text-xs shrink-0">←</span>
+                {/* Dx 콤보박스 */}
+                <div className="flex-1 min-w-0">
+                  <PropertySelect
+                    value={calc.baseColumn}
+                    onChange={(v) =>
+                      handleUpdate("nxCalculations", calc.id, {
+                        baseColumn: v,
+                        name: v.replace(/^Dx_/, ""),
+                      })
+                    }
+                    options={dxColumns}
+                    compact={true}
+                  />
+                </div>
                 <ToggleSwitch
                   checked={calc.active !== false}
                   onChange={(val) =>
@@ -3457,38 +3490,10 @@ const NxMxCalculatorParams: React.FC<{
                 />
                 <button
                   onClick={() => handleRemove("nxCalculations", calc.id)}
-                  className="text-gray-500 hover:text-white"
+                  className="text-gray-500 hover:text-white shrink-0"
                 >
                   <XMarkIcon className="w-3 h-3" />
                 </button>
-              </div>
-              <div className="flex gap-4 items-center w-full pr-20">
-                <PropertySelect
-                  label="Base Column (Dx)"
-                  value={calc.baseColumn}
-                  onChange={(v) =>
-                    handleUpdate("nxCalculations", calc.id, {
-                      baseColumn: v,
-                      name: v.replace(/^Dx_/, ""),
-                    })
-                  }
-                  options={dxColumns}
-                  compact={true}
-                />
-              </div>
-              <div className="text-[10px] text-gray-500">
-                Output:{" "}
-                <span
-                  className={
-                    calc.active !== false
-                      ? "text-blue-300"
-                      : "text-gray-500 line-through"
-                  }
-                >
-                  {calc.baseColumn
-                    ? calc.baseColumn.replace(/^Dx_/, "Nx_")
-                    : "Nx_?"}
-                </span>
               </div>
             </div>
           ))}
@@ -3508,9 +3513,34 @@ const NxMxCalculatorParams: React.FC<{
           {mxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 p-2 rounded-md border border-gray-600 relative"
+              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600 space-y-1.5"
             >
-              <div className="absolute top-1.5 right-1.5 flex items-center gap-2">
+              {/* 단일 행: [출력 textbox] ← [Cx 콤보] [toggle] [삭제] */}
+              <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-0.5 w-28 shrink-0">
+                  <span className="text-[10px] text-gray-500 shrink-0">Mx_</span>
+                  <input
+                    className={`flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-[11px] font-mono ${calc.active !== false ? "text-blue-300" : "text-gray-500"}`}
+                    value={calc.name || calc.baseColumn.replace(/^Cx_/, "")}
+                    onChange={(e) =>
+                      handleUpdate("mxCalculations", calc.id, { name: e.target.value })
+                    }
+                  />
+                </div>
+                <span className="text-gray-500 text-xs shrink-0">←</span>
+                <div className="flex-1 min-w-0">
+                  <PropertySelect
+                    value={calc.baseColumn}
+                    onChange={(v) =>
+                      handleUpdate("mxCalculations", calc.id, {
+                        baseColumn: v,
+                        name: v.replace(/^Cx_/, ""),
+                      })
+                    }
+                    options={cxColumns}
+                    compact={true}
+                  />
+                </div>
                 <ToggleSwitch
                   checked={calc.active !== false}
                   onChange={(val) =>
@@ -3519,123 +3549,74 @@ const NxMxCalculatorParams: React.FC<{
                 />
                 <button
                   onClick={() => handleRemove("mxCalculations", calc.id)}
-                  className="text-gray-500 hover:text-white"
+                  className="text-gray-500 hover:text-white shrink-0"
                 >
                   <XMarkIcon className="w-3 h-3" />
                 </button>
               </div>
-
-              <div className="space-y-2 pr-20">
-                <PropertySelect
-                  label="Base Column (Cx)"
-                  value={calc.baseColumn}
-                  onChange={(v) =>
-                    handleUpdate("mxCalculations", calc.id, {
-                      baseColumn: v,
-                      name: v.replace(/^Cx_/, ""),
-                    })
-                  }
-                  options={cxColumns}
-                  compact={true}
-                />
-
-                <div className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <PropertySelect
-                      label="Waiting Period"
-                      value={calc.deductibleType}
+              {/* 추가 설정: Waiting Period + Payment Schedule */}
+              <div className="flex gap-2 items-start">
+                <div className="flex-1">
+                  <PropertySelect
+                    label="Waiting Period"
+                    value={calc.deductibleType}
+                    onChange={(v) =>
+                      handleUpdate("mxCalculations", calc.id, { deductibleType: v })
+                    }
+                    options={[
+                      { label: "None (100%)", value: "0" },
+                      { label: "25% Deductible", value: "0.25" },
+                      { label: "50% Deductible", value: "0.5" },
+                      { label: "Custom %", value: "custom" },
+                    ]}
+                    compact={true}
+                  />
+                  {calc.deductibleType === "custom" && (
+                    <PropertyInput
+                      label="Custom Deductible (0-1)"
+                      type="number"
+                      step="0.01"
+                      value={calc.customDeductible}
                       onChange={(v) =>
-                        handleUpdate("mxCalculations", calc.id, {
-                          deductibleType: v,
-                        })
+                        handleUpdate("mxCalculations", calc.id, { customDeductible: v })
                       }
-                      options={[
-                        { label: "None (100%)", value: "0" },
-                        { label: "25% Deductible", value: "0.25" },
-                        { label: "50% Deductible", value: "0.5" },
-                        { label: "Custom %", value: "custom" },
-                      ]}
                       compact={true}
                     />
-                    {calc.deductibleType === "custom" && (
-                      <PropertyInput
-                        label="Custom Deductible (0-1)"
-                        type="number"
-                        step="0.01"
-                        value={calc.customDeductible}
-                        onChange={(v) =>
-                          handleUpdate("mxCalculations", calc.id, {
-                            customDeductible: v,
-                          })
-                        }
-                        compact={true}
-                      />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-[10px] text-gray-400 mb-1 font-bold">
-                      Payment Schedule (First 3 Years)
-                    </label>
-                    <div className="grid grid-cols-3 gap-1">
-                      {(calc.paymentRatios || []).map((ratio: any) => (
-                        <div
-                          key={ratio.year}
-                          className="bg-gray-800 p-1 rounded text-[10px]"
-                        >
-                          <div className="text-gray-500 mb-0.5 text-center">
-                            Y{ratio.year}
-                          </div>
-                          <select
-                            value={ratio.type}
-                            onChange={(e) =>
-                              handleUpdatePaymentRatio(
-                                calc.id,
-                                ratio.year,
-                                "type",
-                                e.target.value
-                              )
-                            }
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] mb-0.5"
-                          >
-                            <option value="100%">100%</option>
-                            <option value="50%">50%</option>
-                            <option value="0%">0%</option>
-                            <option value="Custom">Custom</option>
-                          </select>
-                          {ratio.type === "Custom" && (
-                            <input
-                              type="number"
-                              value={ratio.customValue}
-                              onChange={(e) =>
-                                handleUpdatePaymentRatio(
-                                  calc.id,
-                                  ratio.year,
-                                  "customValue",
-                                  parseFloat(e.target.value)
-                                )
-                              }
-                              className="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px]"
-                            />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  )}
                 </div>
-
-                <div className="text-[10px] text-gray-500">
-                  Output:{" "}
-                  <span
-                    className={
-                      calc.active !== false
-                        ? "text-blue-300"
-                        : "text-gray-500 line-through"
-                    }
-                  >
-                    {calc.baseColumn
-                      ? calc.baseColumn.replace(/^Cx_/, "Mx_")
-                      : "Mx_?"}
-                  </span>
+                <div className="flex-1">
+                  <label className="block text-[10px] text-gray-400 mb-1 font-bold">
+                    Payment Schedule (First 3 Years)
+                  </label>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(calc.paymentRatios || []).map((ratio: any) => (
+                      <div key={ratio.year} className="bg-gray-800 p-1 rounded text-[10px]">
+                        <div className="text-gray-500 mb-0.5 text-center">Y{ratio.year}</div>
+                        <select
+                          value={ratio.type}
+                          onChange={(e) =>
+                            handleUpdatePaymentRatio(calc.id, ratio.year, "type", e.target.value)
+                          }
+                          className="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] mb-0.5"
+                        >
+                          <option value="100%">100%</option>
+                          <option value="50%">50%</option>
+                          <option value="0%">0%</option>
+                          <option value="Custom">Custom</option>
+                        </select>
+                        {ratio.type === "Custom" && (
+                          <input
+                            type="number"
+                            value={ratio.customValue}
+                            onChange={(e) =>
+                              handleUpdatePaymentRatio(calc.id, ratio.year, "customValue", parseFloat(e.target.value))
+                            }
+                            className="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px]"
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -3814,41 +3795,54 @@ const PremiumComponentParams: React.FC<{
           {nnxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 p-2 rounded-md border border-gray-600 space-y-2"
+              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600 space-y-1"
             >
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
+              {/* 단일 행: [NNX_base (고정 라벨)] ← [Nx 콤보] [Dx 콤보] [삭제] */}
+              <div className="flex items-center gap-1.5">
+                <div className="w-28 shrink-0">
+                  <span className={`text-[11px] font-mono ${calc.nxColumn ? "text-blue-300" : "text-gray-500"}`}>
+                    {calc.nxColumn
+                      ? `NNX_${calc.nxColumn.replace(/^Nx_/, "")}`
+                      : "NNX_?"}
+                  </span>
+                </div>
+                <span className="text-gray-500 text-xs shrink-0">←</span>
+                <div className="flex-1 min-w-0">
                   <PropertySelect
-                    label="Nx Column"
                     value={calc.nxColumn}
                     onChange={(v) =>
                       handleUpdate("nnxCalculations", calc.id, { nxColumn: v })
                     }
                     options={nxColumns}
-                    placeholder="Select Nx"
+                    placeholder="Nx"
+                    compact={true}
                   />
                 </div>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                   <PropertySelect
-                    label="Dx Column (for Half/Quarter/Month)"
                     value={calc.dxColumn || ""}
                     onChange={(v) =>
                       handleUpdate("nnxCalculations", calc.id, { dxColumn: v })
                     }
                     options={dxColumns}
-                    placeholder="Select Dx"
+                    placeholder="Dx (Half/Qtr/Month)"
+                    compact={true}
                   />
                 </div>
                 <button
                   onClick={() => handleRemove("nnxCalculations", calc.id)}
-                  className="mt-5 text-gray-500 hover:text-white"
+                  className="text-gray-500 hover:text-white shrink-0"
                 >
-                  <XMarkIcon className="w-4 h-4" />
+                  <XMarkIcon className="w-3 h-3" />
                 </button>
               </div>
+              {/* 아래: 생성되는 변수 표시 */}
               {calc.nxColumn && (
                 <div className="text-[10px] text-gray-500 pl-1">
-                  Will generate: NNX(Year), NNX(Half), NNX(Quarter), NNX(Month)
+                  {(() => {
+                    const base = calc.nxColumn.replace(/^Nx_/, "");
+                    return `→ NNX_${base}(Year), NNX_${base}(Half), NNX_${base}(Quarter), NNX_${base}(Month)`;
+                  })()}
                 </div>
               )}
             </div>
@@ -3870,30 +3864,53 @@ const PremiumComponentParams: React.FC<{
           {sumxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 p-3 rounded-md border border-gray-600 relative space-y-2"
+              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600 space-y-1"
             >
-              <button
-                onClick={() => handleRemove("sumxCalculations", calc.id)}
-                className="absolute top-1.5 right-1.5 text-gray-500 hover:text-white"
-              >
-                <XMarkIcon className="w-4 h-4" />
-              </button>
-              <PropertySelect
-                label="Mx Column"
-                value={calc.mxColumn}
-                onChange={(v) =>
-                  handleUpdate("sumxCalculations", calc.id, { mxColumn: v })
-                }
-                options={mxColumns}
-              />
-              <PropertyInput
-                label="Benefit Amount"
-                type="number"
-                value={calc.amount}
-                onChange={(v) =>
-                  handleUpdate("sumxCalculations", calc.id, { amount: v })
-                }
-              />
+              {/* 단일 행: [BPV_name (고정 라벨)] ← [Mx 콤보] [Amount 입력] [삭제] */}
+              <div className="flex items-center gap-1.5">
+                <div className="w-28 shrink-0">
+                  <span className={`text-[11px] font-mono ${calc.mxColumn ? "text-blue-300" : "text-gray-500"}`}>
+                    {calc.mxColumn
+                      ? `BPV_${calc.mxColumn.replace(/^Mx_/, "")}`
+                      : "BPV_?"}
+                  </span>
+                </div>
+                <span className="text-gray-500 text-xs shrink-0">←</span>
+                <div className="flex-1 min-w-0">
+                  <PropertySelect
+                    value={calc.mxColumn}
+                    onChange={(v) =>
+                      handleUpdate("sumxCalculations", calc.id, { mxColumn: v })
+                    }
+                    options={mxColumns}
+                    placeholder="Mx"
+                    compact={true}
+                  />
+                </div>
+                <div className="w-20 shrink-0">
+                  <PropertyInput
+                    label=""
+                    type="number"
+                    value={calc.amount}
+                    onChange={(v) =>
+                      handleUpdate("sumxCalculations", calc.id, { amount: v })
+                    }
+                    compact={true}
+                  />
+                </div>
+                <button
+                  onClick={() => handleRemove("sumxCalculations", calc.id)}
+                  className="text-gray-500 hover:text-white shrink-0"
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                </button>
+              </div>
+              {/* 아래: 생성되는 변수 표시 */}
+              {calc.mxColumn && (
+                <div className="text-[10px] text-gray-500 pl-1">
+                  {`→ BPV_${calc.mxColumn.replace(/^Mx_/, "")} = Diff(${calc.mxColumn}, n) × ${calc.amount ?? 10000}`}
+                </div>
+              )}
             </div>
           ))}
           <button
@@ -4236,17 +4253,24 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
 
   const handleParametersChange = (newParams: Record<string, any>) => {
     updateModuleParameters(module.id, newParams);
+    // SelectData의 deathRateColumn이 변경되면 CalculateSurvivors의 mortalityColumn에 자동 반영
+    if (module.type === ModuleType.SelectData && 'deathRateColumn' in newParams) {
+      const deathRateCol = newParams.deathRateColumn as string;
+      const survivorsMod = modules.find((m) => m.type === ModuleType.CalculateSurvivors);
+      if (survivorsMod && deathRateCol) {
+        updateModuleParameters(survivorsMod.id, { mortalityColumn: 'Death_Rate' });
+      }
+    }
   };
 
   const handleRun = async () => {
     if (onRunModule) {
       setIsRunning(true);
       try {
-        // Run 실행 전에 자동으로 저장
         handleSave();
         await onRunModule(module.id);
-        // Close modal after successful execution
-        handleClose();
+        // 실행 완료 후 닫기: 실행 결과(Success + outputData) 유지, Pending 리셋 건너뜀
+        onClose(false, true);
       } finally {
         setIsRunning(false);
       }
@@ -4262,26 +4286,24 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
   };
 
   const handleClose = () => {
-    // 실제 변경사항이 있는지 확인
     if (hasChanges()) {
       setShowCloseConfirm(true);
     } else {
-      // Additional Variables 모듈의 경우 변경이 없으면 복원 플래그와 함께 닫기
-      if (module.type === ModuleType.AdditionalName) {
-        onClose(true); // shouldRestore = true
-      } else {
-        onClose();
-      }
+      // 변경 없음 → 편집 전 상태 복원 (실행 결과 유지)
+      onClose(true);
     }
   };
 
   const handleConfirmClose = (save: boolean) => {
-    if (save) {
-      handleSave();
-    }
     setShowCloseConfirm(false);
-    // 저장하거나 취소할 때는 복원하지 않음 (변경사항이 있었으므로)
-    onClose();
+    if (save) {
+      // 저장: 현재 변경사항 적용, 상태는 이미 Pending으로 변경되었으므로 그냥 닫기
+      handleSave();
+      onClose(false);
+    } else {
+      // 취소: 편집 전 상태 전체 복원 (params + status + outputData)
+      onClose(true);
+    }
   };
 
   const renderContent = () => {
