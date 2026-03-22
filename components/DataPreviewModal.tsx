@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
   CanvasModule,
@@ -24,6 +24,75 @@ interface DataPreviewModalProps {
   allModules?: CanvasModule[];
   allConnections?: Connection[];
 }
+
+/** 열 이름 호버 툴팁: 계산 방법 팝업 */
+const ColumnDescTooltip: React.FC<{ name: string; description?: string }> = ({ name, description }) => {
+  const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const thRef = React.useRef<HTMLDivElement>(null);
+
+  if (!description) return <span className="truncate">{name}</span>;
+
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setPos({ x: rect.left, y: rect.bottom + 4 });
+    setVisible(true);
+  };
+
+  return (
+    <div
+      ref={thRef}
+      className="relative inline-flex items-center gap-1 cursor-help"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={() => setVisible(false)}
+    >
+      <span className="truncate">{name}</span>
+      <span className="text-blue-400 text-[10px] leading-none flex-shrink-0">ℹ</span>
+      {visible && (
+        <div
+          className="fixed z-[9999] max-w-xs bg-gray-900 text-gray-100 text-xs rounded-lg shadow-2xl border border-gray-700 px-3 py-2 pointer-events-none"
+          style={{ left: pos.x, top: pos.y, minWidth: 180 }}
+        >
+          <p className="font-semibold text-blue-300 mb-1">{name}</p>
+          {description.split("\n").map((line, i) => (
+            <p key={i} className={`leading-snug ${line.startsWith("공식:") || line.startsWith("📂") ? "text-yellow-300 font-mono" : "text-gray-300"}`}>
+              {line}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** 모듈 이름 복사 버튼 (Ctrl+C 안내 포함) */
+const CopyNameButton: React.FC<{ name: string }> = ({ name }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(name).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [name]);
+  return (
+    <button
+      onClick={handleCopy}
+      title="클릭하여 이름 복사 (Ctrl+C)"
+      className="ml-2 p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors flex-shrink-0"
+    >
+      {copied ? (
+        <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  );
+};
 
 type SortConfig = {
   key: string;
@@ -276,9 +345,9 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
     "table"
   );
 
-  // --- Special handling for NNX MMX Calculator Output ---
+  // --- Special handling for NNX BPV Calculator Output ---
   if (module.outputData?.type === "PremiumComponentOutput") {
-    const { nnxResults, mmxValue, mxResults, data } = module.outputData;
+    const { nnxResults, bpvResults, mmxValue, data } = module.outputData;
 
     // Get input table data
     const inputTableData =
@@ -301,12 +370,15 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
           onClick={(e) => e.stopPropagation()}
         >
           <header className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-            <h2 className="text-xl font-bold text-gray-800">
-              NNX MMX Calculator Output: {module.name}
-            </h2>
+            <div className="flex items-center min-w-0">
+              <h2 className="text-xl font-bold text-gray-800">
+                NNX BPV Calculator Output: {module.name}
+              </h2>
+              <CopyNameButton name={module.name} />
+            </div>
             <button
               onClick={onClose}
-              className="text-gray-500 hover:text-gray-800"
+              className="text-gray-500 hover:text-gray-800 flex-shrink-0 ml-2"
             >
               <XCircleIcon className="w-6 h-6" />
             </button>
@@ -358,17 +430,17 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
               </div>
             </div>
 
-            {/* MMX Section */}
+            {/* BPV Section */}
             <div>
               <h3 className="text-lg font-semibold text-gray-700 mb-3 border-b pb-1">
-                Mx & MMX Breakdown (Benefit PV)
+                BPV Breakdown (Benefit Present Value)
               </h3>
               <div className="overflow-x-auto border border-gray-200 rounded-lg mb-4">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="py-2 px-4 font-semibold text-gray-600">
-                        Component (Mx)
+                        Component (BPV)
                       </th>
                       <th className="py-2 px-4 font-semibold text-gray-600 text-right">
                         PV Value
@@ -376,7 +448,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(mxResults).map(([key, value]) => (
+                    {Object.entries(bpvResults ?? {}).map(([key, value]) => (
                       <tr
                         key={key}
                         className="border-b border-gray-200 last:border-b-0"
@@ -389,13 +461,13 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                         </td>
                       </tr>
                     ))}
-                    {Object.keys(mxResults).length === 0 && (
+                    {Object.keys(bpvResults ?? {}).length === 0 && (
                       <tr>
                         <td
                           colSpan={2}
                           className="py-4 text-center text-gray-500"
                         >
-                          No Mx results available.
+                          No BPV results available.
                         </td>
                       </tr>
                     )}
@@ -405,7 +477,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
 
               <div className="flex justify-between items-center p-4 bg-blue-50 rounded-lg border border-blue-100">
                 <span className="text-lg font-bold text-blue-800">
-                  Total MMX
+                  Total BPV
                 </span>
                 <span className="text-2xl font-mono font-black text-blue-700">
                   {formatNumberPreservingOriginal(mmxValue)}
@@ -413,11 +485,11 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
               </div>
             </div>
 
-            {/* Enhanced Table Data with NNX and MMX columns */}
+            {/* Enhanced Table Data with NNX and BPV columns */}
             {data && data.rows && (
               <div>
                 <h3 className="text-lg font-semibold text-gray-700 mb-3 border-b pb-1">
-                  Enhanced Table Data (with NNX and MMX columns)
+                  Enhanced Table Data (with NNX and BPV columns)
                 </h3>
                 <div className="overflow-x-auto border border-gray-200 rounded-lg">
                   <div className="text-xs text-gray-500 mb-2 px-2">
@@ -431,7 +503,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                           <th
                             key={col.name}
                             className={`py-2 px-3 font-semibold text-gray-600 ${
-                              col.name.startsWith("NNX_") || col.name === "MMX"
+                              col.name.startsWith("NNX_") || col.name === "BPV_Col"
                                 ? "bg-green-50"
                                 : ""
                             }`}
@@ -452,7 +524,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                               key={col.name}
                               className={`py-1.5 px-3 text-gray-700 ${
                                 col.name.startsWith("NNX_") ||
-                                col.name === "MMX"
+                                col.name === "BPV_Col"
                                   ? "bg-green-50/30 font-mono"
                                   : ""
                               }`}
@@ -677,9 +749,12 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between p-4 border-b border-gray-200 flex-shrink-0">
-          <h2 className="text-xl font-bold text-gray-800">
-            Data Preview: {module.name}
-          </h2>
+          <div className="flex items-center min-w-0 mr-2">
+            <h2 className="text-xl font-bold text-gray-800">
+              Data Preview: {module.name}
+            </h2>
+            <CopyNameButton name={module.name} />
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowSpreadView(true)}
@@ -760,9 +835,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             onClick={() => requestSort(col.name)}
                           >
                             <div className="flex items-center gap-1">
-                              <span className="truncate" title={col.name}>
-                                {col.name}
-                              </span>
+                              <ColumnDescTooltip name={col.name} description={col.description} />
                               {sortConfig?.key === col.name &&
                                 (sortConfig.direction === "ascending" ? (
                                   <ChevronUpIcon className="w-3 h-3" />

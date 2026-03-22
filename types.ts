@@ -81,6 +81,7 @@ export interface Port {
 export interface ColumnInfo {
   name: string;
   type: string;
+  description?: string; // Tooltip: how this column was calculated
 }
 
 export interface DataPreview {

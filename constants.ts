@@ -32,7 +32,7 @@ export const TOOLBOX_MODULES = [
   },
   {
     type: ModuleType.SelectRiskRates,
-    name: "Age Gender Matching",
+    name: "Rating Basis Builder",
     icon: TableCellsIcon,
     description:
       "Selects rates for the policy term and calculates present value factors.",

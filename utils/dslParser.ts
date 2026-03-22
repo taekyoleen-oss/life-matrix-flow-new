@@ -842,6 +842,7 @@ export function extractFormulaVarRefs(formula: string): string[] {
 
   // 수식 함수/예약어 및 NNX 주기 접미사
   const SKIP = new Set(['sum', 'cumsum_rev', 'lx', 'abs', 'min', 'max', 'if', 'and', 'or', 'not', 'true', 'false',
+                        'Diff', 'diff', 'Round', 'round', 'Floor', 'floor', 'Ceil', 'ceil', 'Sqrt', 'sqrt',
                         'Year', 'Half', 'Quarter', 'Month']);
 
   // [VarName] 또는 [VarName(suffix)] 괄호 표기에서 추출

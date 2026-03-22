@@ -25,6 +25,8 @@ const SECTION_TYPE_MAP: Record<string, ModuleType> = {
   '위험률 데이터 로드': ModuleType.LoadData,
 
   SelectRiskRates: ModuleType.SelectRiskRates,
+  RatingBasisBuilder: ModuleType.SelectRiskRates,
+  'Rating Basis Builder': ModuleType.SelectRiskRates,
   'Age Gender Matching': ModuleType.SelectRiskRates,
   '연령 성별 매칭': ModuleType.SelectRiskRates,
 

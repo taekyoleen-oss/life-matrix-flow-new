@@ -18,14 +18,14 @@ interface ModelFromFileModalProps {
 
 const MODULE_LABELS: Partial<Record<ModuleType, string>> = {
   [ModuleType.LoadData]: '위험률 데이터 로드',
-  [ModuleType.SelectRiskRates]: '연령 성별 매칭',
+  [ModuleType.SelectRiskRates]: 'Rating Basis Builder',
   [ModuleType.SelectData]: '데이터 선택',
   [ModuleType.RateModifier]: '요율 수정',
   [ModuleType.DefinePolicyInfo]: '증권 기본 정보',
   [ModuleType.CalculateSurvivors]: '생존자 계산',
   [ModuleType.ClaimsCalculator]: '클레임 계산',
   [ModuleType.NxMxCalculator]: 'NxMx 계산',
-  [ModuleType.PremiumComponent]: 'NNX MMX 계산',
+  [ModuleType.PremiumComponent]: 'NNX BPV 계산',
   [ModuleType.AdditionalName]: '추가 변수',
   [ModuleType.NetPremiumCalculator]: '순보험료 계산',
   [ModuleType.GrossPremiumCalculator]: '영업보험료 계산',
@@ -50,7 +50,7 @@ const TEMPLATE_MARKDOWN = `# Life Matrix Flow 모델 정의 템플릿
 
 ---
 
-## [2] 연령 성별 매칭 (SelectRiskRates)
+## [2] Rating Basis Builder (SelectRiskRates)
 **포함여부**: yes
 **나이 컬럼**: Age
 **성별 컬럼**: Sex

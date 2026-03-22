@@ -84,6 +84,7 @@ import {
   fetchAutoflowSampleById,
 } from "./utils/supabase-samples";
 import { savePipeline, loadPipeline } from "./utils/fileOperations";
+import { SlideReportButton } from "./components/SlideReportButton";
 import { loadModuleDefault } from "./utils/moduleDefaults";
 import { buildPipelineFromModel } from "./utils/pipelineBuilder";
 import { generateDSL } from "./utils/dslParser";
@@ -2612,14 +2613,14 @@ const App: React.FC = () => {
                       .split(`[${key}]`)
                       .join(String(val ?? 0));
                   }
-                  // Add PaymentTerm and PolicyTerm from policyInfo
+                  // Add PaymentTerm/PolicyTerm and m/n aliases from policyInfo
                   if (policyInfo) {
-                    evalFormula = evalFormula
-                      .split("[PaymentTerm]")
-                      .join(String(policyInfo.paymentTerm ?? 0));
-                    evalFormula = evalFormula
-                      .split("[PolicyTerm]")
-                      .join(String(policyInfo.policyTerm ?? 0));
+                    const mVal = String(policyInfo.paymentTerm ?? 0);
+                    const nVal = String(policyInfo.policyTerm ?? 0);
+                    evalFormula = evalFormula.split("[PaymentTerm]").join(mVal);
+                    evalFormula = evalFormula.split("[PolicyTerm]").join(nVal);
+                    evalFormula = evalFormula.split("[m]").join(mVal);
+                    evalFormula = evalFormula.split("[n]").join(nVal);
                   }
                   // Process IF statements
                   evalFormula = processIfStatements(evalFormula);
@@ -2636,6 +2637,7 @@ const App: React.FC = () => {
                   outputColumnsInfo.push({
                     name: newColumnName,
                     type: "number",
+                    description: `수식으로 계산된 열 (Rate Modifier)\n공식: ${formula}`,
                   });
                 }
               }
@@ -2820,15 +2822,28 @@ const App: React.FC = () => {
             const baseColumns = riskData.columns
               .filter((c) => c.name !== "i_prem" && c.name !== "i_claim")
               .map((c) => {
-                if (c.name === ageColumn) return { ...c, name: "Age" };
-                if (c.name === genderColumn) return { ...c, name: "Gender" };
-                return c;
+                const isAge = c.name === ageColumn;
+                const isGender = c.name === genderColumn;
+                const name = isAge ? "Age" : isGender ? "Gender" : c.name;
+                return {
+                  ...c,
+                  name,
+                  description: `📂 Load Data에서 가져온 원본 열\n원본 열 이름: ${c.name}`,
+                };
               });
 
             const outputColumnsInfo = [
               ...baseColumns,
-              { name: "i_prem", type: "number" as const },
-              { name: "i_claim", type: "number" as const },
+              {
+                name: "i_prem",
+                type: "number" as const,
+                description: `할인계수 (보험료)\n공식: v^t = 1 / (1+i)^t\nt: 경과기간 (0부터 시작)\ni: 연이율 ${(interestRate * 100).toFixed(2)}%`,
+              },
+              {
+                name: "i_claim",
+                type: "number" as const,
+                description: `할인계수 (보험금)\n공식: v^(t+0.5) = 1 / (1+i)^(t+0.5)\n중앙지급 가정 (기간 중앙에 지급)\ni: 연이율 ${(interestRate * 100).toFixed(2)}%`,
+              },
             ];
 
             newOutputData = {
@@ -2946,7 +2961,12 @@ const App: React.FC = () => {
               }
 
               if (!outputColumnsInfo.some((c) => c.name === lxColName)) {
-                outputColumnsInfo.push({ name: lxColName, type: "number" });
+                const ratesDesc = decrementRatesInCalc.join(", ") || "(없음)";
+                outputColumnsInfo.push({
+                  name: lxColName,
+                  type: "number",
+                  description: `생존자수 (Survivors)\nlx[0] = 100,000\nlx[t] = lx[t-1] × (1 - q[t-1])\n적용 위험률: ${ratesDesc}`,
+                });
               }
               const dxColName = `Dx_${calc.name}`;
               for (const row of outputRows) {
@@ -2956,7 +2976,11 @@ const App: React.FC = () => {
                 );
               }
               if (!outputColumnsInfo.some((c) => c.name === dxColName)) {
-                outputColumnsInfo.push({ name: dxColName, type: "number" });
+                outputColumnsInfo.push({
+                  name: dxColName,
+                  type: "number",
+                  description: `할인 생존자수 (Discounted Survivors)\n공식: Dx[t] = lx_${calc.name}[t] × v^t\nv^t = i_prem`,
+                });
               }
             }
 
@@ -2967,7 +2991,11 @@ const App: React.FC = () => {
                 row[fixedLxColName] = 100000;
               }
               if (!outputColumnsInfo.some((c) => c.name === fixedLxColName)) {
-                outputColumnsInfo.push({ name: fixedLxColName, type: "number" });
+                outputColumnsInfo.push({
+                  name: fixedLxColName,
+                  type: "number",
+                  description: "고정 생존자수\nlx = 100,000 (상수)",
+                });
               }
             }
 
@@ -3103,8 +3131,16 @@ const App: React.FC = () => {
               usedColumnNames.add(cxColName); // Important: Register immediately
 
               // 3. Register Column Info
-              outputColumnsInfo.push({ name: dxColName, type: "number" });
-              outputColumnsInfo.push({ name: cxColName, type: "number" });
+              outputColumnsInfo.push({
+                name: dxColName,
+                type: "number",
+                description: `사망자수 (Claims)\n공식: dx[t] = ${lxColumn}[t] × ${riskRateColumn}[t]\nlx: 생존자수, q: 위험률`,
+              });
+              outputColumnsInfo.push({
+                name: cxColName,
+                type: "number",
+                description: `할인 사망자수 (Discounted Claims)\n공식: Cx[t] = ${dxColName}[t] × i_claim[t]\ni_claim = v^(t+0.5) (중앙지급 할인계수)`,
+              });
 
               // 4. Perform Calculation for all rows
               for (const row of outputRows) {
@@ -3304,7 +3340,11 @@ const App: React.FC = () => {
                 row[newColName] = roundTo5(cumulativeData[i]);
               });
               if (!outputColumnsInfo.some((c) => c.name === newColName))
-                outputColumnsInfo.push({ name: newColName, type: "number" });
+                outputColumnsInfo.push({
+                  name: newColName,
+                  type: "number",
+                  description: `연생연금 현가 분자 (Annuity Numerator)\n공식: Nx[t] = Σ(s=t → n-1) ${calc.baseColumn}[s]\n역방향 누적합 (뒤에서부터 더함)`,
+                });
             }
 
             for (const calc of mxCalculations) {
@@ -3341,8 +3381,18 @@ const App: React.FC = () => {
               outputRows.forEach((row, i) => {
                 row[newColName] = roundTo5(cumulativeData[i]);
               });
-              if (!outputColumnsInfo.some((c) => c.name === newColName))
-                outputColumnsInfo.push({ name: newColName, type: "number" });
+              if (!outputColumnsInfo.some((c) => c.name === newColName)) {
+                const deductDesc =
+                  calc.deductibleType === "0" ? "면책 없음" :
+                  calc.deductibleType === "0.25" ? "첫해 0.25년치 면책" :
+                  calc.deductibleType === "0.5" ? "첫해 0.5년치 면책" :
+                  `사용자 면책: ${calc.customDeductible}`;
+                outputColumnsInfo.push({
+                  name: newColName,
+                  type: "number",
+                  description: `보험금 현가 분자 (Benefit Numerator)\n공식: Mx[t] = Σ(s=t → n-1) (${calc.baseColumn}[s] × 지급비율 × 면책조정)\n역방향 누적합\n${deductDesc}`,
+                });
+              }
             }
             newOutputData = {
               type: "DataPreview",
@@ -3971,6 +4021,13 @@ const App: React.FC = () => {
             // Get table data from Additional Variables output for table column access
             const additionalData = additionalVarsOutput.data;
 
+            // When policyTerm is 0 (blank), infer n from actual data row count
+            // (SelectRiskRates outputs exactly policyTerm rows)
+            const effectiveN =
+              policyInfo.policyTerm > 0
+                ? policyInfo.policyTerm
+                : (additionalData?.rows?.length ?? 0);
+
             const context: Record<string, any> = {
               ...premiumComponents.nnxResults,   // NNX_Mortality(Year), NNX_Mortality(Half), ...
               ...(premiumComponents.bpvResults ?? {}), // BPV_Mortality, BPV_CI, ...
@@ -3978,7 +4035,9 @@ const App: React.FC = () => {
               SUMX: premiumComponents.mmxValue,  // backward compat
               BPV: premiumComponents.mmxValue,   // total BPV
               m: policyInfo.paymentTerm,
-              n: policyInfo.policyTerm,
+              n: effectiveN,
+              PaymentTerm: policyInfo.paymentTerm,
+              PolicyTerm: effectiveN,
               ...additionalVars,
             };
 
@@ -4168,7 +4227,18 @@ const App: React.FC = () => {
 
             // Context construction: Inherit previous context + Additional Vars
             // Note: NetPremiumCalculator already added its result (e.g., PP) to variables
+            // Ensure m/n are always present (NetPremiumCalculator propagates them, but guard here too)
+            let grossPolicyInfo: PolicyInfoOutput | null = null;
+            try { grossPolicyInfo = getGlobalPolicyInfo(); } catch (_) {}
+            const grossEffectiveN =
+              grossPolicyInfo && grossPolicyInfo.policyTerm > 0
+                ? grossPolicyInfo.policyTerm
+                : (tableData?.rows?.length ?? netPremiumInput.variables?.["n"] ?? 0);
             const context = {
+              m: grossPolicyInfo?.paymentTerm ?? 0,
+              n: grossEffectiveN,
+              PaymentTerm: grossPolicyInfo?.paymentTerm ?? 0,
+              PolicyTerm: grossEffectiveN,
               ...netPremiumInput.variables,
               ...additionalVars,
             };
@@ -4312,6 +4382,11 @@ const App: React.FC = () => {
             const outputRows = inputData.rows.map((r) => ({ ...r }));
             const outputColumnsInfo = [...inputData.columns];
             const paymentTerm = policyInfo.paymentTerm;
+            // When policyTerm is 0 (blank), infer n from actual data row count
+            const reserveEffectiveN =
+              policyInfo.policyTerm > 0
+                ? policyInfo.policyTerm
+                : inputData.rows.length;
 
             // Build context from Gross Premium variables and table columns
             for (let rowIndex = 0; rowIndex < outputRows.length; rowIndex++) {
@@ -4331,9 +4406,11 @@ const App: React.FC = () => {
 
               // Build context: Gross Premium variables + table row values
               const context: Record<string, any> = {
-                ...grossPremiumInput.variables,
+                m: paymentTerm,
+                n: reserveEffectiveN,
                 PaymentTerm: paymentTerm,
-                PolicyTerm: policyInfo.policyTerm,
+                PolicyTerm: reserveEffectiveN,
+                ...grossPremiumInput.variables,
               };
 
               // Replace table column values
@@ -5400,6 +5477,8 @@ const App: React.FC = () => {
             )}
             <span>{saveButtonText}</span>
           </button>
+          <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
+          <SlideReportButton productName={productName} modules={modules} />
           <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
           <button
             onClick={() => runSimulation()}

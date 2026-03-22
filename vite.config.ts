@@ -9,8 +9,12 @@ export default defineConfig(({ mode }) => {
     const supabaseKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || '';
     return {
       server: {
-        port: 3000,
+        port: 3005,
         host: '0.0.0.0',
+        hmr: true,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
       },
       plugins: [react()],
       define: {
@@ -28,9 +32,6 @@ export default defineConfig(({ mode }) => {
       },
       optimizeDeps: {
         include: ['xlsx'],
-        esbuildOptions: {
-          external: []
-        }
       },
       build: {
         commonjsOptions: {

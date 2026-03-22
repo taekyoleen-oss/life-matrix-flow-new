@@ -127,7 +127,7 @@ export function buildPipelineFromModel(
 
 const DISPLAY_NAMES: Partial<Record<ModuleType, string>> = {
   [ModuleType.LoadData]: 'Load Risk Rates',
-  [ModuleType.SelectRiskRates]: 'Age Gender Matching',
+  [ModuleType.SelectRiskRates]: 'Rating Basis Builder',
   [ModuleType.SelectData]: 'Select Rates',
   [ModuleType.RateModifier]: 'Rate Modifier',
   [ModuleType.DefinePolicyInfo]: 'Define Policy Info',

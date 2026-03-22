@@ -479,6 +479,7 @@ const SelectRiskRatesParams: React.FC<{
         options={columnOptions}
         compact={compact}
       />
+
     </div>
   );
 };
