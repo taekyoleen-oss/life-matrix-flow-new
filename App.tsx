@@ -1996,7 +1996,7 @@ const App: React.FC = () => {
           });
         }
 
-        return prevModules.map((m) => {
+        let updatedModules = prevModules.map((m) => {
           if (m.id === id) {
             return {
               ...m,
@@ -2010,6 +2010,25 @@ const App: React.FC = () => {
           }
           return m;
         });
+
+        // ── basicValues 양방향 동기화: DefinePolicyInfo ↔ AdditionalName
+        if (mergedParams.basicValues !== undefined) {
+          if (currentModule?.type === ModuleType.DefinePolicyInfo) {
+            updatedModules = updatedModules.map((m) =>
+              m.type === ModuleType.AdditionalName
+                ? { ...m, parameters: { ...m.parameters, basicValues: mergedParams.basicValues } }
+                : m
+            );
+          } else if (currentModule?.type === ModuleType.AdditionalName) {
+            updatedModules = updatedModules.map((m) =>
+              m.type === ModuleType.DefinePolicyInfo
+                ? { ...m, parameters: { ...m.parameters, basicValues: mergedParams.basicValues } }
+                : m
+            );
+          }
+        }
+
+        return updatedModules;
       });
       setIsDirty(true);
     },
@@ -5513,14 +5532,6 @@ const App: React.FC = () => {
             >
               <BeakerIcon className="h-4 w-4" />
               <span>Samples</span>
-            </button>
-            <button
-              onClick={() => setIsPolicySetupModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-blue-600 hover:bg-blue-500 text-white"
-              title="상품 정보, 증권 기본 정보, 사업비 설정"
-            >
-              <span>⚙️</span>
-              <span>상품 정보 설정</span>
             </button>
             <button
               onClick={() => setIsDSLModalOpen(true)}

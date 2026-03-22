@@ -274,77 +274,154 @@ export const DefinePolicyInfoParams: React.FC<{
   onParametersChange: (newParams: Record<string, any>) => void;
   compact?: boolean;
 }> = ({ parameters, onParametersChange, compact = false }) => {
+  const [activeTab, setActiveTab] = React.useState<"policy" | "expenses">("policy");
+
   const {
+    riderName = "주계약",
     entryAge,
     gender,
     policyTerm,
     paymentTerm,
     interestRate,
     maturityAge,
+    basicValues = [
+      { name: "α1", value: 0 },
+      { name: "α2", value: 0 },
+      { name: "β1", value: 0 },
+      { name: "β2", value: 0 },
+      { name: "γ",  value: 0 },
+    ],
   } = parameters;
 
   const handleChange = (field: string, value: any) => {
     onParametersChange({ ...parameters, [field]: value });
   };
 
-  return (
-    <div className={compact ? "space-y-2" : "space-y-4"}>
-      <PropertyInput
-        label="Entry Age"
-        type="number"
-        value={entryAge}
-        onChange={(v) => handleChange("entryAge", v)}
-        compact={compact}
-      />
-      <PropertySelect
-        label="Gender"
-        value={gender}
-        onChange={(v) => handleChange("gender", v)}
-        options={["Male", "Female"]}
-        compact={compact}
-      />
-      <div className={`grid grid-cols-2 ${compact ? "gap-2" : "gap-4"}`}>
-        <PropertyInput
-          label="Policy Term (years)"
-          type="number"
-          value={policyTerm || ""}
-          onChange={(v) => handleChange("policyTerm", v === "" ? "" : v)}
-          disabled={!!maturityAge && maturityAge > 0}
-          placeholder="Auto (max age)"
-          compact={compact}
-        />
-        <PropertyInput
-          label="Maturity Age (Optional)"
-          type="number"
-          value={maturityAge || ""}
-          onChange={(v) => handleChange("maturityAge", v)}
-          placeholder="e.g. 60"
-          compact={compact}
-        />
-      </div>
-      <p
-        className={`${compact ? "text-[10px]" : "text-xs"} text-gray-500 -mt-2`}
-      >
-        If Policy Term is empty, it will be calculated from the maximum age in
-        the data (max age - entry age + 1). If Maturity Age is set, Policy Term
-        will be calculated as (Maturity Age - Entry Age).
-      </p>
+  const handleBasicValueChange = (index: number, field: string, value: any) => {
+    const next = [...basicValues];
+    next[index] = { ...next[index], [field]: value };
+    onParametersChange({ ...parameters, basicValues: next });
+  };
 
+  const tabCls = (tab: "policy" | "expenses") =>
+    `px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+      activeTab === tab
+        ? "bg-blue-600 text-white"
+        : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+    }`;
+
+  return (
+    <div className={compact ? "space-y-2" : "space-y-3"}>
+      {/* 특약명 */}
       <PropertyInput
-        label="Payment Term (years)"
-        type="number"
-        value={paymentTerm}
-        onChange={(v) => handleChange("paymentTerm", v)}
+        label="특약명"
+        type="text"
+        value={riderName}
+        onChange={(v) => handleChange("riderName", v)}
+        placeholder="주계약"
         compact={compact}
       />
-      <PropertyInput
-        label="Interest Rate (%)"
-        type="number"
-        step="0.1"
-        value={interestRate}
-        onChange={(v) => handleChange("interestRate", v)}
-        compact={compact}
-      />
+
+      {/* 탭 헤더 */}
+      <div className="flex gap-1 mt-1">
+        <button className={tabCls("policy")} onClick={() => setActiveTab("policy")}>
+          Policy Condition
+        </button>
+        <button className={tabCls("expenses")} onClick={() => setActiveTab("expenses")}>
+          사업비
+        </button>
+      </div>
+
+      {/* ── Policy Condition 탭 */}
+      {activeTab === "policy" && (
+        <div className={compact ? "space-y-2" : "space-y-4"}>
+          <PropertyInput
+            label="Entry Age"
+            type="number"
+            value={entryAge}
+            onChange={(v) => handleChange("entryAge", v)}
+            compact={compact}
+          />
+          <PropertySelect
+            label="Gender"
+            value={gender}
+            onChange={(v) => handleChange("gender", v)}
+            options={["Male", "Female"]}
+            compact={compact}
+          />
+          <div className={`grid grid-cols-2 ${compact ? "gap-2" : "gap-4"}`}>
+            <PropertyInput
+              label="Policy Term (years)"
+              type="number"
+              value={policyTerm || ""}
+              onChange={(v) => handleChange("policyTerm", v === "" ? "" : v)}
+              disabled={!!maturityAge && maturityAge > 0}
+              placeholder="Auto (max age)"
+              compact={compact}
+            />
+            <PropertyInput
+              label="Maturity Age (Optional)"
+              type="number"
+              value={maturityAge || ""}
+              onChange={(v) => handleChange("maturityAge", v)}
+              placeholder="e.g. 60"
+              compact={compact}
+            />
+          </div>
+          <p className={`${compact ? "text-[10px]" : "text-xs"} text-gray-500 -mt-2`}>
+            보험기간을 비우면 위험률 데이터의 최대 연령에서 자동 산출합니다.
+            만기연령 설정 시 보험기간 = 만기연령 − 가입연령.
+          </p>
+          <PropertyInput
+            label="Payment Term (years)"
+            type="number"
+            value={paymentTerm}
+            onChange={(v) => handleChange("paymentTerm", v)}
+            compact={compact}
+          />
+          <PropertyInput
+            label="Interest Rate (%)"
+            type="number"
+            step="0.1"
+            value={interestRate}
+            onChange={(v) => handleChange("interestRate", v)}
+            compact={compact}
+          />
+        </div>
+      )}
+
+      {/* ── 사업비 탭 */}
+      {activeTab === "expenses" && (
+        <div className="space-y-3">
+          <p className="text-xs text-gray-400">
+            순보험료·영업보험료 계산에 사용되는 사업비 계수를 입력하세요.
+            변수명은 수식에서 직접 참조됩니다.
+          </p>
+          <div className="grid grid-cols-5 gap-2">
+            {basicValues.map((bv: { name: string; value: number }, idx: number) => (
+              <div
+                key={idx}
+                className="rounded-lg border border-gray-600 p-2 flex flex-col gap-2 bg-gray-900/60"
+              >
+                <input
+                  type="text"
+                  value={bv.name}
+                  onChange={(e) => handleBasicValueChange(idx, "name", e.target.value)}
+                  className="w-full text-center text-xs rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-800 border-gray-700 text-gray-300"
+                  placeholder="이름"
+                />
+                <input
+                  type="number"
+                  step="0.001"
+                  value={bv.value}
+                  onChange={(e) => handleBasicValueChange(idx, "value", parseFloat(e.target.value) || 0)}
+                  className="w-full text-center text-xs font-mono rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-700 border-gray-600 text-white"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1352,40 +1429,34 @@ const AdditionalNameParams: React.FC<{
 
   return (
     <div className="space-y-6">
-      {/* Basic Loadings Section */}
+      {/* Basic Loadings Section - 읽기 전용 (Define Policy Info에서 관리) */}
       <div>
-        <h4 className="text-xs text-gray-400 font-bold mb-2">Basic Loadings</h4>
-        <div className="grid grid-cols-5 gap-2">
+        <h4 className="text-xs text-gray-400 font-bold mb-1">Basic Loadings (사업비)</h4>
+        <div className="grid grid-cols-5 gap-2 opacity-60 pointer-events-none select-none">
           {basicValues.map((bv: any, index: number) => (
             <div
               key={index}
-              className="bg-gray-900/50 p-2 rounded-md border border-gray-600 flex flex-col gap-2"
+              className="bg-gray-900/50 p-2 rounded-md border border-gray-700 flex flex-col gap-2"
             >
               <input
                 type="text"
                 value={bv.name}
-                onChange={(e) =>
-                  handleUpdateBasicValue(index, "name", e.target.value)
-                }
-                className="w-full bg-gray-800 text-center text-gray-300 border border-gray-700 rounded px-1 py-1 text-xs focus:outline-none focus:border-blue-500"
-                placeholder="Name"
+                readOnly
+                className="w-full bg-gray-800 text-center text-gray-400 border border-gray-700 rounded px-1 py-1 text-xs cursor-not-allowed"
               />
               <input
                 type="number"
                 value={bv.value}
-                onChange={(e) =>
-                  handleUpdateBasicValue(
-                    index,
-                    "value",
-                    parseFloat(e.target.value) || 0
-                  )
-                }
+                readOnly
                 step="0.001"
-                className="w-full bg-gray-700 text-center text-white border border-gray-600 rounded px-1 py-1 text-xs font-mono focus:outline-none focus:border-blue-500"
+                className="w-full bg-gray-800 text-center text-gray-400 border border-gray-700 rounded px-1 py-1 text-xs font-mono cursor-not-allowed"
               />
             </div>
           ))}
         </div>
+        <p className="text-[11px] text-yellow-400 mt-2">
+          ℹ️ 사업비는 <strong>Define Policy Info</strong> 모듈에서 변경이 가능합니다.
+        </p>
       </div>
 
       {/* Custom Variables Section */}

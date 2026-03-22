@@ -9,9 +9,36 @@ interface Props {
 
 type ButtonState = "idle" | "loading" | "done" | "error";
 
+// 파이프라인이 정상 완료되었는지 확인
+// - Error/Running 모듈이 하나도 없어야 함
+// - NetPremium 또는 GrossPremium 중 하나 이상 Success여야 함
+function isPipelineReady(modules: CanvasModule[]): { ready: boolean; reason?: string } {
+  const ignored = new Set([ModuleType.TextBox, ModuleType.GroupBox]);
+  const calcModules = modules.filter((m) => !ignored.has(m.type));
+
+  const hasError   = calcModules.some((m) => m.status === ModuleStatus.Error);
+  const hasRunning = calcModules.some((m) => m.status === ModuleStatus.Running);
+
+  if (hasError)   return { ready: false, reason: "에러가 발생한 모듈이 있습니다. 오류를 확인하세요." };
+  if (hasRunning) return { ready: false, reason: "실행 중인 모듈이 있습니다. 완료 후 보고서를 생성하세요." };
+
+  const netMod   = modules.find((m) => m.type === ModuleType.NetPremiumCalculator);
+  const grossMod = modules.find((m) => m.type === ModuleType.GrossPremiumCalculator);
+  const hasPremium =
+    netMod?.status === ModuleStatus.Success ||
+    grossMod?.status === ModuleStatus.Success;
+
+  if (!hasPremium)
+    return { ready: false, reason: "파이프라인을 먼저 실행하세요. 순보험료 또는 영업보험료 산출이 필요합니다." };
+
+  return { ready: true };
+}
+
 export function SlideReportButton({ productName, modules }: Props) {
   const [state, setState] = useState<ButtonState>("idle");
   const [toast, setToast] = useState<string | null>(null);
+
+  const { ready, reason } = isPipelineReady(modules);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -19,19 +46,7 @@ export function SlideReportButton({ productName, modules }: Props) {
   };
 
   const handleClick = async () => {
-    if (state === "loading") return;
-
-    // 사전 검증: NetPremium 또는 GrossPremium 모듈 실행 여부 확인
-    const netMod = modules.find((m) => m.type === ModuleType.NetPremiumCalculator);
-    const grossMod = modules.find((m) => m.type === ModuleType.GrossPremiumCalculator);
-    const hasComputed =
-      netMod?.status === ModuleStatus.Success ||
-      grossMod?.status === ModuleStatus.Success;
-
-    if (!hasComputed) {
-      showToast("⚠️ 파이프라인을 먼저 실행하세요. 순보험료 또는 영업보험료 산출 후 보고서를 생성할 수 있습니다.");
-    }
-    // 경고만 표시하고 진행은 허용
+    if (!ready || state === "loading") return;
 
     setState("loading");
     try {
@@ -46,43 +61,39 @@ export function SlideReportButton({ productName, modules }: Props) {
     }
   };
 
-  const buttonConfig: Record<ButtonState, { label: string; className: string }> = {
-    idle: {
-      label: "📊 PPT 보고서",
-      className:
-        "flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-700 hover:bg-indigo-600 text-white cursor-pointer",
-    },
-    loading: {
-      label: "⏳ 생성 중…",
-      className:
-        "flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-700 text-white opacity-70 cursor-not-allowed",
-    },
-    done: {
-      label: "✅ 완료",
-      className:
-        "flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-green-700 text-white cursor-default",
-    },
-    error: {
-      label: "❌ 오류",
-      className:
-        "flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-red-700 text-white cursor-default",
-    },
-  };
+  // 비활성화 상태 계산
+  const isDisabled = !ready || state === "loading" || state === "done" || state === "error";
 
-  const { label, className } = buttonConfig[state];
+  let label = "📊 PPT 보고서";
+  let className =
+    "flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 text-white";
+
+  if (!ready) {
+    className += " bg-gray-500 opacity-50 cursor-not-allowed";
+  } else if (state === "loading") {
+    label = "⏳ 생성 중…";
+    className += " bg-indigo-700 opacity-70 cursor-not-allowed";
+  } else if (state === "done") {
+    label = "✅ 완료";
+    className += " bg-green-700 cursor-default";
+  } else if (state === "error") {
+    label = "❌ 오류";
+    className += " bg-red-700 cursor-default";
+  } else {
+    className += " bg-indigo-700 hover:bg-indigo-600 cursor-pointer";
+  }
 
   return (
     <>
       <button
         onClick={handleClick}
-        disabled={state === "loading" || state === "done" || state === "error"}
+        disabled={isDisabled}
         className={className}
-        title="파이프라인 결과를 PPT 슬라이드 보고서로 저장"
+        title={ready ? "파이프라인 결과를 PPT 슬라이드 보고서로 저장" : (reason ?? "파이프라인 실행 후 사용 가능")}
       >
         {label}
       </button>
 
-      {/* 토스트 알림 */}
       {toast && (
         <div
           style={{

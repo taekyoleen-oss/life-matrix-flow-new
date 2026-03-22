@@ -515,7 +515,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]); // modules/productName은 열릴 때 한 번만 참조하므로 의도적으로 제외
 
-  // ── 캔버스 모듈로 DSL 재생성
+  // ── 캔버스 모듈로 DSL 재생성 (localStorage에도 저장하여 재오픈 시 유지)
   const handleRegenerateFromCanvas = useCallback(() => {
     if (modules.length === 0) return;
     const generated = generateDSL(
@@ -523,6 +523,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
       modules.map((m) => ({ type: m.type, parameters: m.parameters }))
     );
     setDslText(generated);
+    try { localStorage.setItem(DRAFT_KEY, generated); } catch { /* ignore */ }
   }, [modules, productName]);
 
   // ── 저장 다이얼로그 열기
@@ -1065,22 +1066,6 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                       className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
                     >🔄 캔버스 재생성</button>
                   )}
-                  <span className={`text-gray-600 select-none`}>|</span>
-                  {/* 표기 방식 선택 */}
-                  <button
-                    onClick={handleToggleNotation}
-                    title={notationStyle === 'cumsum_rev'
-                      ? '현재: cumsum_rev() (계리적 정확 표기) — 클릭하면 sum()으로 전환'
-                      : '현재: sum() (간결 표기) — 클릭하면 cumsum_rev()으로 전환'}
-                    className={`px-2 py-0.5 rounded text-xs font-mono flex items-center gap-1 ${
-                      notationStyle === 'cumsum_rev'
-                        ? (isDark ? 'bg-indigo-800 text-indigo-200' : 'bg-indigo-100 text-indigo-700 border border-indigo-200')
-                        : (isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600')
-                    }`}
-                  >
-                    <span>{notationStyle === 'cumsum_rev' ? 'Σ↑ cumsum_rev' : 'Σ sum'}</span>
-                    <span className="text-[9px] opacity-60">⇄</span>
-                  </button>
                 </div>
               </div>
 

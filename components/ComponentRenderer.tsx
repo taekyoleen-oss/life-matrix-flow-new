@@ -472,14 +472,16 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
            </div>
 
            {/* Right: Output Area (2/3) */}
-           <div 
-                className={`w-2/3 p-1 flex flex-col justify-center relative ${theme === 'light' ? 'hover:bg-gray-100/50' : 'hover:bg-gray-700/50'} transition-colors cursor-pointer group`}
-                onClick={(e) => { e.stopPropagation(); onViewDetails(module.id); }}
+           <div
+                className={`w-2/3 p-1 flex flex-col justify-center relative ${module.type !== ModuleType.DefinePolicyInfo ? `${theme === 'light' ? 'hover:bg-gray-100/50' : 'hover:bg-gray-700/50'} cursor-pointer group` : ''} transition-colors`}
+                onClick={(e) => { e.stopPropagation(); if (module.type !== ModuleType.DefinePolicyInfo) onViewDetails(module.id); }}
            >
-                 {/* Tooltip for View Results */}
+                 {/* Tooltip for View Results (DefinePolicyInfo 제외) */}
+                 {module.type !== ModuleType.DefinePolicyInfo && (
                  <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block px-2 py-1 bg-black text-[10px] text-gray-200 rounded shadow-lg z-50 pointer-events-none border border-gray-600 whitespace-nowrap">
                     Click to view Results
                  </div>
+                 )}
 
                 <ModuleOutputSummary module={module} />
 
