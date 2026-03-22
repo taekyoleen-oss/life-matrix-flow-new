@@ -299,7 +299,8 @@ export const DefinePolicyInfoParams: React.FC<{
 
   const handleBasicValueChange = (index: number, field: string, value: any) => {
     const next = [...basicValues];
-    next[index] = { ...next[index], [field]: value };
+    const sanitized = field === "value" ? Math.max(0, parseFloat(value) || 0) : value;
+    next[index] = { ...next[index], [field]: sanitized };
     onParametersChange({ ...parameters, basicValues: next });
   };
 
@@ -413,8 +414,9 @@ export const DefinePolicyInfoParams: React.FC<{
                 <input
                   type="number"
                   step="0.001"
+                  min="0"
                   value={bv.value}
-                  onChange={(e) => handleBasicValueChange(idx, "value", parseFloat(e.target.value) || 0)}
+                  onChange={(e) => handleBasicValueChange(idx, "value", e.target.value)}
                   className="w-full text-center text-xs font-mono rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-700 border-gray-600 text-white"
                 />
               </div>
@@ -4296,11 +4298,17 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
   } | null>(null);
 
   // 초기값과 현재값을 비교하여 실제 변경사항이 있는지 확인하는 함수
+  // AdditionalName의 basicValues는 DefinePolicyInfo에서만 변경되므로 비교에서 제외
   const hasChanges = React.useCallback(() => {
+    if (module.type === ModuleType.AdditionalName) {
+      const { basicValues: _cv, ...currentRest } = module.parameters as any;
+      const { basicValues: _iv, ...initialRest } = initialParametersRef.current as any;
+      return JSON.stringify(currentRest) !== JSON.stringify(initialRest);
+    }
     const current = JSON.stringify(module.parameters);
     const initial = JSON.stringify(initialParametersRef.current);
     return current !== initial;
-  }, [module.parameters]);
+  }, [module.parameters, module.type]);
 
   // 모듈이 열릴 때 저장된 기본값이 있으면 적용
   React.useEffect(() => {

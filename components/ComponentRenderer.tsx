@@ -1,5 +1,5 @@
 
-import React, { MouseEvent, TouchEvent, useRef, useCallback, useMemo } from 'react';
+import React, { MouseEvent, TouchEvent, useRef, useCallback, useMemo, useState } from 'react';
 import { CanvasModule, ModuleStatus, Port, Connection, ModuleType } from '../types';
 import { PlayIcon, XMarkIcon } from './icons';
 import { TOOLBOX_MODULES } from '../constants';
@@ -103,8 +103,11 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
   const { theme } = useTheme();
   const lastTapRef = useRef(0);
   const moduleInfo = TOOLBOX_MODULES.find(m => m.type === module.type);
+  const [pendingDelete, setPendingDelete] = useState(false);
 
-  const handleDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); onDelete(module.id); };
+  const handleDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); setPendingDelete(true); };
+  const handleConfirmDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); onDelete(module.id); };
+  const handleCancelDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); setPendingDelete(false); };
   const handleMouseDown = (e: MouseEvent) => { e.stopPropagation(); onDragStart(module.id, e); };
   
   const handleDoubleClick = (e: MouseEvent) => { e.stopPropagation(); onEditParameters(module.id); };
@@ -240,14 +243,21 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
         onDoubleClick={handleDoubleClick}
       >
         {/* Delete button in top-right corner */}
-        <button 
-          onClick={handleDelete}
-          className="absolute top-1 right-1 p-0.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors z-10"
-          title="Delete"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <XMarkIcon className="w-3 h-3" />
-        </button>
+        {pendingDelete ? (
+          <div className="absolute top-1 right-1 flex items-center gap-0.5 z-10" onMouseDown={(e) => e.stopPropagation()}>
+            <button onClick={handleConfirmDelete} className="px-1 py-0.5 text-[10px] font-bold bg-red-600 hover:bg-red-500 text-white rounded transition-colors">삭제</button>
+            <button onClick={handleCancelDelete} className="px-1 py-0.5 text-[10px] font-bold bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors">취소</button>
+          </div>
+        ) : (
+          <button
+            onClick={handleDelete}
+            className="absolute top-1 right-1 p-0.5 text-gray-500 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors z-10"
+            title="삭제"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <XMarkIcon className="w-3 h-3" />
+          </button>
+        )}
         <div className="p-2 flex-grow overflow-auto" style={{ height: `${height - 16}px` }}>
           {isEditing ? (
             <textarea
@@ -331,17 +341,24 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
               ? 'bg-green-900/30 border-green-400/30' 
               : 'bg-purple-900/30 border-purple-400/30'
           }`}>
-            <button 
-              onClick={handleDelete}
-              className={`p-0.5 rounded transition-colors ${
-                isSuccess 
-                  ? 'text-green-400 hover:text-red-400 hover:bg-red-900/30' 
-                  : 'text-purple-400 hover:text-red-400 hover:bg-red-900/30'
-              }`}
-              title="Delete Group"
-            >
-              <XMarkIcon className="w-3 h-3" />
-            </button>
+            {pendingDelete ? (
+              <div className="flex items-center gap-0.5" onMouseDown={(e) => e.stopPropagation()}>
+                <button onClick={handleConfirmDelete} className="px-1 py-0.5 text-[10px] font-bold bg-red-600 hover:bg-red-500 text-white rounded transition-colors">삭제</button>
+                <button onClick={handleCancelDelete} className="px-1 py-0.5 text-[10px] font-bold bg-gray-600 hover:bg-gray-500 text-white rounded transition-colors">취소</button>
+              </div>
+            ) : (
+              <button
+                onClick={handleDelete}
+                className={`p-0.5 rounded transition-colors ${
+                  isSuccess
+                    ? 'text-green-400 hover:text-red-400 hover:bg-red-900/30'
+                    : 'text-purple-400 hover:text-red-400 hover:bg-red-900/30'
+                }`}
+                title="Delete Group"
+              >
+                <XMarkIcon className="w-3 h-3" />
+              </button>
+            )}
           </div>
           {/* Extra space at bottom for execution results */}
           <div className="h-10"></div>
@@ -412,13 +429,20 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                 <PlayIcon className="w-8 h-8" />
              </button>
              )}
-             <button 
-                onClick={handleDelete}
-                className={`p-1 ${theme === 'light' ? 'text-gray-600 hover:text-red-500 hover:bg-red-100' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/30'} rounded-full transition-colors`}
-                title="Delete Module"
-             >
-                <XMarkIcon className="w-4 h-4" />
-             </button>
+             {pendingDelete ? (
+               <div className="flex items-center gap-0.5" onMouseDown={(e) => e.stopPropagation()}>
+                 <button onClick={handleConfirmDelete} className="px-1.5 py-0.5 text-[10px] font-bold bg-red-600 hover:bg-red-500 text-white rounded transition-colors">삭제</button>
+                 <button onClick={handleCancelDelete} className={`px-1.5 py-0.5 text-[10px] font-bold rounded transition-colors ${theme === 'light' ? 'bg-gray-300 hover:bg-gray-400 text-gray-800' : 'bg-gray-600 hover:bg-gray-500 text-white'}`}>취소</button>
+               </div>
+             ) : (
+               <button
+                 onClick={handleDelete}
+                 className={`p-1 ${theme === 'light' ? 'text-gray-600 hover:text-red-500 hover:bg-red-100' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/30'} rounded-full transition-colors`}
+                 title="Delete Module"
+               >
+                 <XMarkIcon className="w-4 h-4" />
+               </button>
+             )}
          </div>
       </div>
 

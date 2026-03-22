@@ -2014,11 +2014,25 @@ const App: React.FC = () => {
         // ── basicValues 양방향 동기화: DefinePolicyInfo ↔ AdditionalName
         if (mergedParams.basicValues !== undefined) {
           if (currentModule?.type === ModuleType.DefinePolicyInfo) {
-            updatedModules = updatedModules.map((m) =>
-              m.type === ModuleType.AdditionalName
-                ? { ...m, parameters: { ...m.parameters, basicValues: mergedParams.basicValues } }
-                : m
-            );
+            // AdditionalName과 그 downstream(NetPremium, GrossPremium, Reserve 등)도 Pending으로 리셋
+            const addMod = updatedModules.find((m) => m.type === ModuleType.AdditionalName);
+            const addDownstream = new Set<string>();
+            if (addMod) {
+              const q2 = [addMod.id];
+              while (q2.length > 0) {
+                const cid = q2.shift()!;
+                (adj[cid] || []).forEach((child) => {
+                  if (!addDownstream.has(child)) { addDownstream.add(child); q2.push(child); }
+                });
+              }
+            }
+            updatedModules = updatedModules.map((m) => {
+              if (m.type === ModuleType.AdditionalName)
+                return { ...m, parameters: { ...m.parameters, basicValues: mergedParams.basicValues }, status: ModuleStatus.Pending, outputData: undefined };
+              if (addDownstream.has(m.id))
+                return { ...m, status: ModuleStatus.Pending, outputData: undefined };
+              return m;
+            });
           } else if (currentModule?.type === ModuleType.AdditionalName) {
             updatedModules = updatedModules.map((m) =>
               m.type === ModuleType.DefinePolicyInfo
@@ -2045,16 +2059,34 @@ const App: React.FC = () => {
       JSON.stringify(addMod.parameters.basicValues)
     ) return;
     const synced = defMod.parameters.basicValues;
+
+    // AdditionalName의 downstream도 함께 Pending으로 리셋
+    const adj: Record<string, string[]> = {};
+    connections.forEach((conn) => {
+      if (!adj[conn.from.moduleId]) adj[conn.from.moduleId] = [];
+      adj[conn.from.moduleId].push(conn.to.moduleId);
+    });
+    const addDownstream = new Set<string>();
+    const q2 = [addMod.id];
+    while (q2.length > 0) {
+      const cid = q2.shift()!;
+      (adj[cid] || []).forEach((child) => {
+        if (!addDownstream.has(child)) { addDownstream.add(child); q2.push(child); }
+      });
+    }
+
     setModules(
       (prev) =>
-        prev.map((m) =>
-          m.type === ModuleType.AdditionalName
-            ? { ...m, parameters: { ...m.parameters, basicValues: synced } }
-            : m
-        ),
+        prev.map((m) => {
+          if (m.type === ModuleType.AdditionalName)
+            return { ...m, parameters: { ...m.parameters, basicValues: synced }, status: ModuleStatus.Pending, outputData: undefined };
+          if (addDownstream.has(m.id))
+            return { ...m, status: ModuleStatus.Pending, outputData: undefined };
+          return m;
+        }),
       true // overwrite: 히스토리 진입 없이 덮어쓰기
     );
-  }, [modules, setModules]);
+  }, [modules, setModules, connections]);
 
   const handlePolicySetupApply = useCallback(
     (
@@ -6160,6 +6192,25 @@ const App: React.FC = () => {
                         if (!toReset.has(child)) { toReset.add(child); q.push(child); }
                       });
                     }
+                    // DefinePolicyInfo 저장 시 basicValues 변경이면 AdditionalName + 그 downstream도 리셋
+                    if (editingModule.type === ModuleType.DefinePolicyInfo) {
+                      const oldBV = JSON.stringify(initialState.parameters.basicValues ?? []);
+                      const newBV = JSON.stringify(current.parameters.basicValues ?? []);
+                      if (oldBV !== newBV) {
+                        const addMod = prevModules.find((m) => m.type === ModuleType.AdditionalName);
+                        if (addMod) {
+                          const q2 = [addMod.id];
+                          while (q2.length > 0) {
+                            const cid = q2.shift()!;
+                            (adj[cid] || []).forEach((child) => {
+                              if (!toReset.has(child)) { toReset.add(child); q2.push(child); }
+                            });
+                          }
+                          toReset.add(addMod.id);
+                        }
+                      }
+                    }
+
                     return prevModules.map((m) => {
                       if (m.id === editingModule.id)
                         return { ...m, status: ModuleStatus.Pending, outputData: undefined };
