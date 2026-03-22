@@ -2035,6 +2035,27 @@ const App: React.FC = () => {
     [setModules, connections]
   );
 
+  // ── DefinePolicyInfo.basicValues → AdditionalName 동기화 (로드·외부변경 포함)
+  useEffect(() => {
+    const defMod = modules.find((m) => m.type === ModuleType.DefinePolicyInfo);
+    const addMod = modules.find((m) => m.type === ModuleType.AdditionalName);
+    if (!defMod?.parameters.basicValues || !addMod) return;
+    if (
+      JSON.stringify(defMod.parameters.basicValues) ===
+      JSON.stringify(addMod.parameters.basicValues)
+    ) return;
+    const synced = defMod.parameters.basicValues;
+    setModules(
+      (prev) =>
+        prev.map((m) =>
+          m.type === ModuleType.AdditionalName
+            ? { ...m, parameters: { ...m.parameters, basicValues: synced } }
+            : m
+        ),
+      true // overwrite: 히스토리 진입 없이 덮어쓰기
+    );
+  }, [modules, setModules]);
+
   const handlePolicySetupApply = useCallback(
     (
       name: string,
