@@ -412,10 +412,19 @@ const loadInitialState = (): {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (parsed.modules && parsed.connections) {
-        return {
-          modules: parsed.modules,
-          connections: parsed.connections,
-        };
+        // Restore separately stored fileContents
+        let fileContents: Record<string, string> = {};
+        try {
+          const fc = localStorage.getItem("lifeMatrixFlow_fileContents");
+          if (fc) fileContents = JSON.parse(fc);
+        } catch {}
+        const modules = parsed.modules.map((m: any) => {
+          if (m.parameters?.fileContent === "__STORED_SEPARATELY__" && fileContents[m.id]) {
+            return { ...m, parameters: { ...m.parameters, fileContent: fileContents[m.id] } };
+          }
+          return m;
+        });
+        return { modules, connections: parsed.connections };
       }
     }
   } catch (error) {
@@ -425,29 +434,42 @@ const loadInitialState = (): {
 };
 
 // Save initial state to localStorage
+// Large fileContent values are stored separately to avoid 5MB limit
+const INITIAL_STATE_KEY = "lifeMatrixFlow_initialState";
+const FILE_CONTENT_KEY = "lifeMatrixFlow_fileContents";
+
 const saveInitialState = (
   modules: CanvasModule[],
   connections: Connection[]
-) => {
+): boolean => {
   try {
-    // Create clean copies without outputData but keep all parameters
+    // Extract large fileContent values separately
+    const fileContents: Record<string, string> = {};
     const cleanModules = modules.map((m) => {
       const { outputData, ...moduleWithoutOutput } = m;
+      const params = { ...(m.parameters || {}) };
+      if (params.fileContent && typeof params.fileContent === "string" && params.fileContent.length > 10000) {
+        fileContents[m.id] = params.fileContent;
+        params.fileContent = "__STORED_SEPARATELY__";
+      }
       return {
         ...moduleWithoutOutput,
         status: ModuleStatus.Pending,
-        parameters: m.parameters || {}, // Ensure parameters are included
+        parameters: params,
       };
     });
+    // Save file contents separately
+    if (Object.keys(fileContents).length > 0) {
+      localStorage.setItem(FILE_CONTENT_KEY, JSON.stringify(fileContents));
+    }
     localStorage.setItem(
-      "lifeMatrixFlow_initialState",
-      JSON.stringify({
-        modules: cleanModules,
-        connections: connections,
-      })
+      INITIAL_STATE_KEY,
+      JSON.stringify({ modules: cleanModules, connections })
     );
+    return true;
   } catch (error) {
     console.error("Failed to save initial state to localStorage:", error);
+    return false;
   }
 };
 
@@ -634,6 +656,19 @@ const App: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadedInitialState, modules.length, initialModules.length]);
 
+  // 페이지 종료 시 현재 상태를 자동 저장 (항상 마지막 작업 상태로 복원)
+  const modulesRef = useRef(modules);
+  const connectionsRef = useRef(connections);
+  useEffect(() => { modulesRef.current = modules; }, [modules]);
+  useEffect(() => { connectionsRef.current = connections; }, [connections]);
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveInitialState(modulesRef.current, connectionsRef.current);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
+
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
   const [productName, setProductName] = useState("New Life Product");
   const [isEditingProductName, setIsEditingProductName] = useState(false);
@@ -657,6 +692,7 @@ const App: React.FC = () => {
 
   const [isDirty, setIsDirty] = useState(false);
   const [saveButtonText, setSaveButtonText] = useState("Save");
+  const [initialSavedToast, setInitialSavedToast] = useState<string | null>(null);
 
   // Canvas tabs: multiple canvases with add/rename
   const [tabs, setTabs] = useState<{ id: string; name: string; backgroundColor?: string }[]>([{ id: "tab-1", name: "Tab 1" }]);
@@ -1667,16 +1703,15 @@ const App: React.FC = () => {
   };
 
   const handleSetAsInitial = () => {
-    if (
-      confirm(
-        "현재 모델을 초기 화면으로 설정하시겠습니까? 다음에 앱을 열 때 이 모델이 기본으로 표시됩니다."
-      )
-    ) {
-      saveInitialState(modules, connections);
-      alert(
-        "초기 화면으로 설정되었습니다. 다음에 앱을 열 때 이 모델이 표시됩니다."
-      );
+    const ok = saveInitialState(modules, connections);
+    if (ok) {
+      setInitialSavedToast("✓ 초기 화면으로 설정되었습니다. 다음 실행 시 이 모델이 표시됩니다.");
+      setTimeout(() => setInitialSavedToast(null), 3000);
+    } else {
+      setInitialSavedToast("⚠ 저장에 실패했습니다. 파일 크기를 확인하세요.");
+      setTimeout(() => setInitialSavedToast(null), 4000);
     }
+    setIsMyWorkMenuOpen(false);
   };
 
   const handleDeletePersonalWork = (workName: string, index: number) => {
@@ -5469,6 +5504,12 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white h-screen w-full flex flex-col overflow-hidden transition-colors duration-200">
+      {/* 초기 화면 저장 토스트 */}
+      {initialSavedToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white bg-gray-900 dark:bg-gray-100 dark:text-gray-900 border border-gray-700 dark:border-gray-300 flex items-center gap-2 animate-fade-in">
+          {initialSavedToast}
+        </div>
+      )}
       <header className="flex flex-col px-4 py-1.5 bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex-shrink-0 z-20 relative overflow-visible">
         {/* 첫 번째 줄: 제목 및 모델 이름 */}
         <div className="flex items-center w-full">
@@ -5651,9 +5692,13 @@ const App: React.FC = () => {
                   <button
                     onClick={handleSetAsInitial}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
+                    title="현재 캔버스 모델을 앱 시작 기본 화면으로 저장합니다"
                   >
                     <SparklesIcon className="w-4 h-4 text-yellow-400" />
-                    <span className="text-green-400">초기 화면으로 설정</span>
+                    <div className="flex flex-col">
+                      <span className="text-green-400">초기 화면으로 설정</span>
+                      <span className="text-[10px] text-gray-400">현재 모델을 앱 시작 기본값으로 저장</span>
+                    </div>
                   </button>
                   <div className="p-2 text-xs font-bold text-gray-500 dark:text-gray-500 uppercase border-b border-gray-200 dark:border-gray-700">
                     My Saved Models
