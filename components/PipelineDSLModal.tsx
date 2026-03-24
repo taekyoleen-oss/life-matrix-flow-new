@@ -1064,7 +1064,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                       onClick={handleRegenerateFromCanvas}
                       title="현재 캔버스 상태에서 DSL 재생성"
                       className={`px-2 py-0.5 rounded text-xs ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' : 'bg-gray-100 hover:bg-gray-200 text-gray-600'}`}
-                    >🔄 캔버스 재생성</button>
+                    >🔄 캔버스 내용 가져오기</button>
                   )}
                 </div>
               </div>

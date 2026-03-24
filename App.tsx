@@ -258,6 +258,23 @@ const initialModules: CanvasModule[] = lifxModules.length > 0 ? lifxModules : [
     id: "policy-1",
     ...getModuleDefault(ModuleType.DefinePolicyInfo),
     position: { x: 50, y: 50 },
+    parameters: {
+      riderName: "주계약",
+      entryAge: 40,
+      gender: "Male",
+      policyTerm: "",
+      paymentTerm: 10,
+      interestRate: 2.5,
+      maturityAge: 0,
+      basicValues: [
+        { name: "α1", value: 0 },
+        { name: "α2", value: 0 },
+        { name: "β1", value: 0 },
+        { name: "β2", value: 0 },
+        { name: "β'", value: 0 },
+        { name: "γ",  value: 0 },
+      ],
+    },
   },
   {
     id: "scenario-runner-1",

@@ -21,7 +21,8 @@ interface NetPremiumPreviewModalProps {
 
 const formatValue = (value: number) => {
   return new Intl.NumberFormat("en-US", {
-    maximumFractionDigits: 6,
+    maximumFractionDigits: 7,
+    minimumFractionDigits: 7,
   }).format(value);
 };
 
@@ -303,7 +304,7 @@ You are an actuary explaining a premium calculation result to a product manager 
                         {inputTableData.columns.map((col) => (
                           <td
                             key={col.name}
-                            className="py-1.5 px-3 text-gray-700"
+                            className={`py-1.5 px-3 text-gray-700${typeof row[col.name] === "number" ? " text-right font-mono" : ""}`}
                           >
                             {row[col.name] !== null &&
                             row[col.name] !== undefined

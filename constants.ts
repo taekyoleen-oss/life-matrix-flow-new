@@ -173,6 +173,7 @@ export const DEFAULT_MODULES: Omit<CanvasModule, "id" | "position" | "name">[] =
           { name: "α2", value: 0 },
           { name: "β1", value: 0 },
           { name: "β2", value: 0 },
+          { name: "β'", value: 0 },
           { name: "γ",  value: 0 },
         ],
       },

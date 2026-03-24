@@ -7,6 +7,7 @@ import {
   createAutoflowSample,
   updateSampleModel,
   updateAutoflowSample,
+  updateSampleModelContent,
 } from "../utils/supabase-samples";
 
 interface Sample {
@@ -86,8 +87,12 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
     category: "종신보험",
     description: "",
     developer_email: "",
+    modelFile: null as File | null,
+    inputDataFile: null as File | null,
+    inputDataName: "",
   });
   const [editSaving, setEditSaving] = React.useState(false);
+  const [editError, setEditError] = React.useState<string | null>(null);
 
   // Samples 닫을 때 등록 탭·편집 초기화
   React.useEffect(() => {
@@ -99,29 +104,59 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
 
   const handleEditOpen = (sample: Sample) => {
     setEditingSample(sample);
+    setEditError(null);
     setEditForm({
       name: sample.name,
       category: sample.category || "종신보험",
       description: sample.description || "",
       developer_email: sample.developerEmail || "",
+      modelFile: null,
+      inputDataFile: null,
+      inputDataName: "",
     });
   };
 
   const handleEditSave = async () => {
     if (!editingSample || !editingSample.id || !(editingSample as Sample & { modelId?: string }).modelId) return;
-    const modelId = (editingSample as Sample & { modelId?: string }).modelId;
+    const modelId = (editingSample as Sample & { modelId?: string }).modelId as string;
     setEditSaving(true);
+    setEditError(null);
     try {
       await updateSampleModel(modelId, { name: editForm.name.trim() });
+
+      let inputDataId: string | undefined = undefined;
+      if (editForm.inputDataFile && editForm.inputDataName.trim()) {
+        const content = await editForm.inputDataFile.text();
+        const inputResult = await createSampleInputData(editForm.inputDataName.trim(), content);
+        if (inputResult) inputDataId = inputResult.id;
+      }
+
+      if (editForm.modelFile) {
+        const modelText = await editForm.modelFile.text();
+        let modelData: { modules?: unknown[]; connections?: unknown[] };
+        try {
+          modelData = JSON.parse(modelText);
+        } catch {
+          setEditError("모델 파일이 올바른 JSON이 아닙니다.");
+          setEditSaving(false);
+          return;
+        }
+        const modules = Array.isArray(modelData.modules) ? modelData.modules : [];
+        const connections = Array.isArray(modelData.connections) ? modelData.connections : [];
+        await updateSampleModelContent(modelId, { modules, connections });
+      }
+
       await updateAutoflowSample(String(editingSample.id), {
         category: editForm.category || null,
         description: editForm.description.trim() || null,
         developer_email: editForm.developer_email.trim() || null,
+        ...(inputDataId ? { input_data_id: inputDataId } : {}),
       });
       setEditingSample(null);
       onRefresh?.();
     } catch (e) {
       console.error("Edit sample failed:", e);
+      setEditError("저장 중 오류가 발생했습니다.");
     } finally {
       setEditSaving(false);
     }
@@ -490,8 +525,11 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
         {/* 샘플 편집 모달 */}
         {editingSample && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setEditingSample(null)}>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">샘플 편집</h3>
+              {editError && (
+                <div className="p-3 rounded-md bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-sm">{editError}</div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">이름</label>
                 <input
@@ -535,10 +573,57 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                   placeholder="developer@example.com"
                 />
               </div>
+              {/* 모델 파일 업데이트 */}
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">첨부 파일 업데이트 (선택사항 - 선택하지 않으면 기존 파일 유지)</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      모델 파일 (.lifx / .json)
+                      {editingSample.filename && (
+                        <span className="ml-2 text-xs text-gray-400">현재: {editingSample.filename}</span>
+                      )}
+                    </label>
+                    <input
+                      type="file"
+                      accept=".lifx,.json"
+                      onChange={(e) => setEditForm((f) => ({ ...f, modelFile: e.target.files?.[0] ?? null }))}
+                      className="w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-purple-50 file:text-purple-700 dark:file:bg-purple-900/30 dark:file:text-purple-300 hover:file:bg-purple-100"
+                    />
+                    {editForm.modelFile && (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">선택됨: {editForm.modelFile.name}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      입력 데이터 파일 (.csv / .xlsx)
+                      {editingSample.inputData && (
+                        <span className="ml-2 text-xs text-gray-400">현재 파일 있음</span>
+                      )}
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.inputDataName}
+                      onChange={(e) => setEditForm((f) => ({ ...f, inputDataName: e.target.value }))}
+                      className="w-full px-3 py-2 mb-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md text-gray-900 dark:text-white text-sm"
+                      placeholder="입력 데이터 이름 (파일 선택 시 필수)"
+                    />
+                    <input
+                      type="file"
+                      accept=".csv,.xlsx,.xls,.txt"
+                      onChange={(e) => setEditForm((f) => ({ ...f, inputDataFile: e.target.files?.[0] ?? null }))}
+                      className="w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/30 dark:file:text-blue-300 hover:file:bg-blue-100"
+                    />
+                    {editForm.inputDataFile && (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">선택됨: {editForm.inputDataFile.name}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setEditingSample(null)}
+                  onClick={() => { setEditingSample(null); setEditError(null); }}
                   className="flex-1 px-4 py-2 rounded-md bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 hover:bg-gray-300 dark:hover:bg-gray-600"
                 >
                   취소

@@ -72,7 +72,9 @@ export const PropertyInput: React.FC<{
       step={step}
       onChange={(e) =>
         onChange(
-          type === "number" ? parseFloat(e.target.value) || 0 : e.target.value
+          type === "number"
+            ? (e.target.value === "" ? "" : parseFloat(e.target.value))
+            : e.target.value
         )
       }
       disabled={disabled}
@@ -289,6 +291,7 @@ export const DefinePolicyInfoParams: React.FC<{
       { name: "α2", value: 0 },
       { name: "β1", value: 0 },
       { name: "β2", value: 0 },
+      { name: "β'", value: 0 },
       { name: "γ",  value: 0 },
     ],
   } = parameters;
@@ -299,7 +302,7 @@ export const DefinePolicyInfoParams: React.FC<{
 
   const handleBasicValueChange = (index: number, field: string, value: any) => {
     const next = [...basicValues];
-    const sanitized = field === "value" ? Math.max(0, parseFloat(value) || 0) : value;
+    const sanitized = field === "value" ? (value === "" ? "" : value) : value;
     next[index] = { ...next[index], [field]: sanitized };
     onParametersChange({ ...parameters, basicValues: next });
   };
@@ -398,8 +401,8 @@ export const DefinePolicyInfoParams: React.FC<{
             순보험료·영업보험료 계산에 사용되는 사업비 계수를 입력하세요.
             변수명은 수식에서 직접 참조됩니다.
           </p>
-          <div className="grid grid-cols-5 gap-2">
-            {basicValues.map((bv: { name: string; value: number }, idx: number) => (
+          <div className="grid grid-cols-6 gap-2">
+            {basicValues.map((bv: { name: string; value: number | string }, idx: number) => (
               <div
                 key={idx}
                 className="rounded-lg border border-gray-600 p-2 flex flex-col gap-2 bg-gray-900/60"
@@ -414,10 +417,10 @@ export const DefinePolicyInfoParams: React.FC<{
                 <input
                   type="number"
                   step="0.001"
-                  min="0"
                   value={bv.value}
                   onChange={(e) => handleBasicValueChange(idx, "value", e.target.value)}
                   className="w-full text-center text-xs font-mono rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-700 border-gray-600 text-white"
+                  placeholder="0"
                 />
               </div>
             ))}
@@ -1434,7 +1437,7 @@ const AdditionalNameParams: React.FC<{
       {/* Basic Loadings Section - 읽기 전용 (Define Policy Info에서 관리) */}
       <div>
         <h4 className="text-xs text-gray-400 font-bold mb-1">Basic Loadings (사업비)</h4>
-        <div className="grid grid-cols-5 gap-2 opacity-60 pointer-events-none select-none">
+        <div className="grid grid-cols-5 gap-2 opacity-60 pointer-events-none select-text">
           {basicValues.map((bv: any, index: number) => (
             <div
               key={index}
@@ -3284,20 +3287,23 @@ const ClaimsCalculatorParams: React.FC<{
             </button>
 
             {/* 단일 행: [출력 이름 편집] ← [lx 콤보] [q 콤보] */}
-            <div className="flex items-center gap-1.5 w-full">
-              <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1 h-[32px] flex-shrink-0">
-                <span className="text-gray-500 text-xs mr-0.5">dx_/Cx_</span>
-                <input
-                  type="text"
-                  placeholder={calc.riskRateColumn || "이름"}
-                  value={calc.name || ""}
-                  onChange={(e) =>
-                    handleUpdateCalculation(calc.id, "name", e.target.value)
-                  }
-                  className="w-24 bg-transparent focus:outline-none text-blue-300 text-xs font-mono"
-                />
+            <div className="flex items-end gap-1.5 w-full">
+              <div className="flex flex-col gap-1 flex-shrink-0">
+                <span className="text-xs text-gray-400">출력명</span>
+                <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1 h-[26px]">
+                  <span className="text-gray-500 text-xs mr-0.5">dx_/Cx_</span>
+                  <input
+                    type="text"
+                    placeholder={calc.riskRateColumn || "이름"}
+                    value={calc.name || ""}
+                    onChange={(e) =>
+                      handleUpdateCalculation(calc.id, "name", e.target.value)
+                    }
+                    className="w-24 bg-transparent focus:outline-none text-blue-300 text-xs font-mono"
+                  />
+                </div>
               </div>
-              <span className="text-gray-500 text-xs shrink-0">←</span>
+              <span className="text-gray-500 text-xs shrink-0 pb-1">←</span>
               <div className="flex-1 min-w-0">
                 <PropertySelect
                   label="lx"

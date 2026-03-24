@@ -402,7 +402,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(nnxResults).map(([key, value]) => (
+                    {Object.entries(nnxResults).filter(([, value]) => !isNaN(Number(value))).map(([key, value]) => (
                       <tr
                         key={key}
                         className="border-b border-gray-200 last:border-b-0"
@@ -415,7 +415,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                         </td>
                       </tr>
                     ))}
-                    {Object.keys(nnxResults).length === 0 && (
+                    {Object.entries(nnxResults).filter(([, value]) => !isNaN(Number(value))).length === 0 && (
                       <tr>
                         <td
                           colSpan={2}
@@ -525,8 +525,8 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                               className={`py-1.5 px-3 text-gray-700 ${
                                 col.name.startsWith("NNX_") ||
                                 col.name === "BPV_Col"
-                                  ? "bg-green-50/30 font-mono"
-                                  : ""
+                                  ? "bg-green-50/30 font-mono text-right"
+                                  : typeof row[col.name] === "number" ? "text-right" : ""
                               }`}
                             >
                               {row[col.name] !== null &&
@@ -579,7 +579,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                           {inputTableData.columns.map((col) => (
                             <td
                               key={col.name}
-                              className="py-1.5 px-3 text-gray-700"
+                              className={`py-1.5 px-3 text-gray-700${typeof row[col.name] === "number" ? " text-right font-mono" : ""}`}
                             >
                               {row[col.name] !== null &&
                               row[col.name] !== undefined
@@ -873,7 +873,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                             return (
                               <td
                                 key={col.name}
-                                className="py-1.5 px-3 font-mono truncate"
+                                className={`py-1.5 px-3 font-mono truncate${typeof val === "number" ? " text-right" : ""}`}
                                 title={String(val)}
                               >
                                 {displayVal}
