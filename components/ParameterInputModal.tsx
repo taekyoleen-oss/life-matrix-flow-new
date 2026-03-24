@@ -286,7 +286,7 @@ export const DefinePolicyInfoParams: React.FC<{
     paymentTerm,
     interestRate,
     maturityAge,
-    basicValues = [
+    basicValues: rawBasicValues = [
       { name: "α1", value: 0 },
       { name: "α2", value: 0 },
       { name: "β1", value: 0 },
@@ -295,6 +295,27 @@ export const DefinePolicyInfoParams: React.FC<{
       { name: "γ",  value: 0 },
     ],
   } = parameters;
+
+  // β'가 없는 기존 데이터에 자동 삽입 (β2 바로 뒤)
+  const basicValues = React.useMemo(() => {
+    const hasB2 = rawBasicValues.some((bv: any) => bv.name === "β2");
+    const hasBPrime = rawBasicValues.some((bv: any) => bv.name === "β'");
+    if (hasB2 && !hasBPrime) {
+      const b2Index = rawBasicValues.findIndex((bv: any) => bv.name === "β2");
+      const next = [...rawBasicValues];
+      next.splice(b2Index + 1, 0, { name: "β'", value: 0 });
+      return next;
+    }
+    return rawBasicValues;
+  }, [rawBasicValues]);
+
+  // β'가 자동 삽입된 경우 parameters에 반영
+  React.useEffect(() => {
+    const hasBPrime = rawBasicValues.some((bv: any) => bv.name === "β'");
+    if (!hasBPrime && basicValues.length > rawBasicValues.length) {
+      onParametersChange({ ...parameters, basicValues });
+    }
+  }, [basicValues.length]);
 
   const handleChange = (field: string, value: any) => {
     onParametersChange({ ...parameters, [field]: value });
