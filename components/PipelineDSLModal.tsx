@@ -59,25 +59,42 @@ const MODULE_LABELS: Partial<Record<ModuleType, string>> = {
 const MODULE_DESCRIPTIONS: Partial<Record<ModuleType, { desc: string; formulas: string[] }>> = {
   [ModuleType.LoadData]: {
     desc: '위험률 CSV 파일을 불러옵니다',
-    formulas: [],
+    formulas: [
+      'file = 파일명.csv  (파일 이름 지정)',
+      '📂 불러오기 버튼으로 실제 파일을 선택하세요',
+      '불러오면 LoadData·SelectData가 자동 설정됩니다',
+    ],
   },
   [ModuleType.SelectRiskRates]: {
-    desc: '가입연령·성별로 위험률 행을 선택합니다',
-    formulas: [],
+    desc: '가입연령·성별로 위험률 행을 선택하고 할인율(i_prem, i_claim)을 계산합니다',
+    formulas: [
+      'ageCol = 연령열이름  (예: Age)',
+      'genderCol = 성별열이름  (예: Sex)',
+      'i_prem: 보험료 이자계수 (납입 시점 현가)',
+      'i_claim: 급부 이자계수 (지급 시점 현가)',
+    ],
   },
   [ModuleType.SelectData]: {
-    desc: '계산에 필요한 열만 선택·이름 변경합니다',
-    formulas: [],
+    desc: '계산에 필요한 열만 선택하고 이름을 변경합니다',
+    formulas: [
+      '출력열이름 = 원본열이름',
+      'Death_Rate 로 이름 변경한 열이 사망위험률로 자동 적용됩니다',
+      '🔧 열 선택 버튼으로 열 목록에서 선택·순서 지정 가능',
+    ],
   },
   [ModuleType.RateModifier]: {
-    desc: '이자계수 등 파생 열을 계산합니다',
-    formulas: ['i_prem: 보험료 이자계수 (납입 시점 현가)', 'i_claim: 급부 이자계수 (지급 시점 현가)'],
+    desc: '위험률을 수정하거나 파생 열을 추가합니다',
+    formulas: [
+      '예: Modified_Rate = Death_Rate * 1.5  (위험률 150% 적용)',
+      '수정이 필요 없으면 내용을 비워두세요',
+    ],
   },
   [ModuleType.CalculateSurvivors]: {
     desc: '나이별 생존자수(lx)와 할인 생존자수(Dx)를 계산합니다',
     formulas: [
-      'lx(위험률): lx[t] = lx[t-1] × (1 - 위험률[t])',
-      '초기값 lx[0] = 100,000 / 다중감소: lx(사망률, 해약률)',
+      'mortalityCol = 사망위험률열이름',
+      'lx(위험률): lx[t] = lx[t-1] × (1 − 위험률[t])  (초기값 100,000)',
+      '다중감소: lx(사망률, 해약률)',
       'Dx = lx × i_prem  (할인 생존자수)',
     ],
   },
@@ -91,42 +108,104 @@ const MODULE_DESCRIPTIONS: Partial<Record<ModuleType, { desc: string; formulas: 
   [ModuleType.NxMxCalculator]: {
     desc: '각 나이부터 만기까지의 역방향 누적합을 계산합니다',
     formulas: [
-      'cumsum_rev(Dx): Nx[t] = Dx[t] + Dx[t+1] + ... + Dx[만기]',
-      'Nx: 보험료 납입연금 현가 계산에 사용',
-      'cumsum_rev(Cx): Mx[t] = Cx[t] + Cx[t+1] + ... + Cx[만기]',
-      'Mx: 사망급부 현가 계산에 사용',
-      '공제 옵션: cumsum_rev(Cx, deduct=0.25)  ← 3개월 대기기간',
+      'Nx[t] = Dx[t] + Dx[t+1] + ⋯ + Dx[만기]  (보험료 납입연금 현가)',
+      'Mx[t] = Cx[t] + Cx[t+1] + ⋯ + Cx[만기]  (사망급부 현가)',
+      '공제: cumsum_rev(Cx, deduct=0.25)  ← 3개월 대기기간',
+      'Σ 버튼으로 sum / cumsum_rev 전환 가능',
     ],
   },
   [ModuleType.PremiumComponent]: {
     desc: '보험료·급부 현가 구성 요소를 계산합니다',
     formulas: [
-      'NNX = Diff(Nx, m)  ← Nx[0] - Nx[m]  (납입기간 보험료 연금현가)',
-      'Diff(col, n) = col[0] - col[n]  |  m = 납입만료, n = 보험만기',
-      'BPV = Diff(Mx, n) × 보험가입금액  ← (Mx[0] - Mx[n]) × 금액',
-      '생성 변수: NNX_[열이름](Year/Half/Quarter/Month), BPV_[열이름]',
+      'NNX = Diff(Nx, m)  → Nx[0] − Nx[m]  (납입기간 보험료 연금현가)',
+      '  생성: NNX_*(Year), NNX_*(Half), NNX_*(Quarter), NNX_*(Month)',
+      'BPV = Diff(Mx, n) × 금액  → (Mx[0] − Mx[n]) × 보험가입금액',
+      'Diff(col, n) = col[0] − col[n]  |  m=납입만료, n=보험만기',
     ],
   },
   [ModuleType.AdditionalName]: {
-    desc: '영업보험료 계산용 사업비 계수를 정의합니다',
-    formulas: ['α1, α2: 신계약비율', 'β1, β2: 유지비율', 'γ: 수금비율'],
+    desc: '영업보험료 계산용 사업비 계수를 정의합니다 (0이면 사업비 없음)',
+    formulas: [
+      'α1, α2: 신계약비율  (초년도 및 갱신 신계약비)',
+      'β1, β2: 유지비율  (납입 중 및 납입 후)',
+      'γ: 수금비율',
+    ],
   },
   [ModuleType.NetPremiumCalculator]: {
-    desc: '순보험료를 계산합니다 (수지상등 원칙)',
-    formulas: ['PP = BPV_Mortality ÷ NNX_Mortality(Year)  (급부현가 ÷ 보험료현가)'],
+    desc: '수지상등 원칙으로 순보험료(PP)를 계산합니다',
+    formulas: [
+      'PP = BPV ÷ NNX(Year)  (급부현가 ÷ 보험료현가)',
+      '미래 급부현가 = 미래 보험료현가 원칙 적용',
+    ],
   },
   [ModuleType.GrossPremiumCalculator]: {
-    desc: '영업보험료를 계산합니다',
-    formulas: ['GP = PP ÷ (1 - 사업비율)', '사업비율 = α1 + α2 (신계약비) + β (유지비)'],
+    desc: '사업비를 반영한 영업보험료(GP)를 계산합니다',
+    formulas: [
+      'GP = PP ÷ (1 − 사업비율)',
+      '사업비율 = α1 + α2  (신계약비)  + β1 + β2  (유지비)',
+    ],
   },
   [ModuleType.ReserveCalculator]: {
-    desc: '순보험료식 책임준비금을 계산합니다',
+    desc: '순보험료식 책임준비금(V)을 계산합니다',
     formulas: [
-      'V[t] = 미래급부현가 - 미래보험료현가 (t 시점)',
-      'V[t<=m]: 납입기간 중  /  V[t>m]: 납입 완료 후',
+      'V[t] = 미래급부현가 − 미래보험료현가  (t 시점 기준)',
+      'V[t≤m]: 납입기간 중  →  급부현가 − GP × 보험료현가',
+      'V[t>m]:  납입 완료 후 →  급부현가만 계산',
     ],
   },
 };
+
+// 섹션 헤더 → ModuleType 매핑 (커서 위치 감지용)
+const MODULE_HEADER_MAP: Record<string, ModuleType> = {
+  loaddata: ModuleType.LoadData,
+  load: ModuleType.LoadData,
+  selectriskrates: ModuleType.SelectRiskRates,
+  ratingbasisbuilder: ModuleType.SelectRiskRates,
+  agegendermatching: ModuleType.SelectRiskRates,
+  selectdata: ModuleType.SelectData,
+  ratemodifier: ModuleType.RateModifier,
+  calculatesurvivors: ModuleType.CalculateSurvivors,
+  claimscalculator: ModuleType.ClaimsCalculator,
+  claims: ModuleType.ClaimsCalculator,
+  nxmxcalculator: ModuleType.NxMxCalculator,
+  nxmx: ModuleType.NxMxCalculator,
+  premiumcomponent: ModuleType.PremiumComponent,
+  additionalname: ModuleType.AdditionalName,
+  netpremiumcalculator: ModuleType.NetPremiumCalculator,
+  netpremium: ModuleType.NetPremiumCalculator,
+  grosspremiumcalculator: ModuleType.GrossPremiumCalculator,
+  grosspremium: ModuleType.GrossPremiumCalculator,
+  reservecalculator: ModuleType.ReserveCalculator,
+  reserve: ModuleType.ReserveCalculator,
+  scenariorunner: ModuleType.ScenarioRunner,
+};
+
+// ── DSL 특정 모듈 섹션 내용을 교체하는 유틸
+function replaceModuleSection(dslText: string, targetType: ModuleType, newBodyLines: string[]): string {
+  const lines = dslText.split('\n');
+  let headerIdx = -1;
+  let nextHeaderIdx = lines.length;
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (t.startsWith('## ')) {
+      const key = t.slice(3).trim().toLowerCase().replace(/\s+/g, '');
+      const type = MODULE_HEADER_MAP[key] ?? null;
+      if (type === targetType) {
+        headerIdx = i;
+      } else if (headerIdx >= 0) {
+        nextHeaderIdx = i;
+        break;
+      }
+    }
+  }
+  if (headerIdx < 0) return dslText;
+  return [
+    ...lines.slice(0, headerIdx + 1),
+    ...newBodyLines,
+    '',
+    ...lines.slice(nextHeaderIdx),
+  ].join('\n');
+}
 
 // ── localStorage / sessionStorage 키
 const DRAFT_KEY        = 'lmf_dsl_draft';
@@ -403,6 +482,16 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
 
   // ── 흐름 에러 (실시간)
   const [flowErrors, setFlowErrors] = useState<DSLFlowError[]>([]);
+
+  // ── 에디터 스크롤 위치 (LoadData 오버레이 위치 계산용)
+  const [editorScrollTop, setEditorScrollTop] = useState(0);
+
+  // ── 커서가 위치한 모듈 (DSL 문법 패널 연동)
+  const [cursorModule, setCursorModule] = useState<ModuleType | null>(null);
+
+  // ── 모듈 편집기 팝업
+  const [moduleEditor, setModuleEditor] = useState<ModuleType | null>(null);
+  const [moduleEditorData, setModuleEditorData] = useState<Record<string, any>>({});
 
   // ── DSL 파싱 (실시간)
   useEffect(() => {
@@ -739,6 +828,191 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
     return { top: taRect.top + spanTop - ta.scrollTop + lh + 4, left: taRect.left + spanLeft };
   }, []);
 
+  const updateCursorModule = useCallback((ta: HTMLTextAreaElement) => {
+    const before = ta.value.substring(0, ta.selectionStart ?? 0);
+    const lines = before.split('\n');
+    let found: ModuleType | null = null;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line.startsWith('## ')) {
+        const key = line.slice(3).trim().toLowerCase();
+        found = MODULE_HEADER_MAP[key] ?? null;
+        break;
+      }
+      if (line.startsWith('# ')) break;
+    }
+    setCursorModule(found);
+  }, []);
+
+  // ── 모듈 편집기 열기: parsed 결과에서 현재 값 추출 → form 초기화
+  const openModuleEditor = useCallback((type: ModuleType) => {
+    const section = parsed.sections.find(s => s.type === type);
+    const lines = section?.lines ?? [];
+    const g = (key: string) => lines.find(l => l.output.toLowerCase().replace(/\s/g,'') === key.toLowerCase())?.formula ?? '';
+    const d: Record<string, any> = {};
+    switch (type) {
+      case ModuleType.SelectRiskRates:
+        d.ageCol    = g('agecol')    || 'Age';
+        d.genderCol = g('gendercol') || 'Sex';
+        break;
+      case ModuleType.RateModifier:
+        d.rows = lines.map(l => ({ output: l.output, formula: l.formula }));
+        if (d.rows.length === 0) d.rows = [{ output: '', formula: '' }];
+        break;
+      case ModuleType.CalculateSurvivors:
+        d.mortalityCol = g('mortalitycol') || 'Death_Rate';
+        d.rows = lines
+          .filter(l => l.output.toLowerCase().startsWith('lx'))
+          .map(l => {
+            const m = l.formula.match(/\(([^)]+)\)/);
+            return { name: l.output.replace(/^lx_?/i,''), rates: m ? m[1] : l.formula.trim() };
+          });
+        if (d.rows.length === 0) d.rows = [{ name: 'Mortality', rates: 'Death_Rate' }];
+        break;
+      case ModuleType.ClaimsCalculator:
+        d.rows = lines
+          .filter(l => l.output.toLowerCase().startsWith('dx'))
+          .map(l => {
+            const parts = l.formula.split('*').map((s: string) => s.trim());
+            return { lxCol: parts[0] ?? '', riskCol: parts[1] ?? '' };
+          });
+        if (d.rows.length === 0) d.rows = [{ lxCol: 'lx_Mortality', riskCol: 'Death_Rate' }];
+        break;
+      case ModuleType.NxMxCalculator: {
+        d.nxRows = lines.filter(l => l.output.toLowerCase().startsWith('nx')).map(l => {
+          const m = l.formula.match(/\(([^,)]+)/); const dxCol = m ? m[1].trim() : l.formula.trim();
+          return { dxCol, name: l.output.replace(/^Nx_?/i,'') || dxCol.replace(/^Dx_?/i,'') };
+        });
+        d.mxRows = lines.filter(l => l.output.toLowerCase().startsWith('mx')).map(l => {
+          const inner = (l.formula.match(/\(([^)]+)\)/) ?? [])[1] ?? '';
+          const dm = inner.match(/,\s*deduct\s*=\s*([\d.]+)/i);
+          const cxCol = inner.split(',')[0].trim();
+          return { cxCol, name: l.output.replace(/^Mx_?/i,'') || cxCol.replace(/^Cx_?/i,''), deduct: dm ? dm[1] : '0' };
+        });
+        if (d.nxRows.length === 0) d.nxRows = [{ dxCol: 'Dx_Mortality', name: 'Mortality' }];
+        if (d.mxRows.length === 0) d.mxRows = [{ cxCol: 'Cx_Mortality', name: 'Mortality', deduct: '0' }];
+        break;
+      }
+      case ModuleType.PremiumComponent:
+        d.nnxRows = lines.filter(l => l.output.toLowerCase().startsWith('nnx')).map(l => {
+          const m = l.formula.match(/Diff\s*\(\s*([A-Za-z_]\w*)/i);
+          return { nxCol: m ? m[1] : 'Nx_Mortality' };
+        });
+        d.bpvRows = lines.filter(l => l.output.toLowerCase().startsWith('bpv')).map(l => {
+          const m = l.formula.match(/Diff\s*\(\s*([A-Za-z_]\w*)/i);
+          const am = l.formula.match(/\)\s*\*\s*([\d,]+)/);
+          return { mxCol: m ? m[1] : 'Mx_Mortality', amount: am ? Number(am[1].replace(/,/g,'')) : 10000 };
+        });
+        if (d.nnxRows.length === 0) d.nnxRows = [{ nxCol: 'Nx_Mortality' }];
+        if (d.bpvRows.length === 0) d.bpvRows = [{ mxCol: 'Mx_Mortality', amount: 10000 }];
+        break;
+      case ModuleType.AdditionalName:
+        d.alpha1 = g('α1') || '0'; d.alpha2 = g('α2') || '0';
+        d.beta1  = g('β1') || '0'; d.beta2  = g('β2') || '0';
+        d.gamma  = g('γ')  || '0';
+        break;
+      case ModuleType.NetPremiumCalculator: {
+        const f0 = lines[0];
+        d.varName = f0?.output ?? 'PP';
+        const pts = (f0?.formula ?? '').split('/').map((s: string) => s.trim());
+        d.bpvCol = pts[0] || 'BPV_Mortality';
+        const nm = (pts[1] ?? '').match(/([A-Za-z_]\w*)/);
+        d.nnxCol = nm ? nm[1] : 'NNX_Mortality';
+        const pm = (pts[1] ?? '').match(/\((\w+)\)/);
+        d.period = pm ? pm[1] : 'Year';
+        break;
+      }
+      case ModuleType.GrossPremiumCalculator: {
+        const f0 = lines[0];
+        d.varName = f0?.output ?? 'GP';
+        const fm = (f0?.formula ?? '').match(/^([A-Za-z_α-ωΑ-Ω]\w*)/);
+        d.ppCol = fm ? fm[1] : 'PP';
+        const dm = (f0?.formula ?? '').match(/\(1\s*-\s*(.+)\)/);
+        d.denomExpr = dm ? dm[1] : 'α1 + α2';
+        break;
+      }
+      case ModuleType.ReserveCalculator: {
+        const ltm = lines.find(l => /<=|납입중/i.test(l.output));
+        const gtm = lines.find(l => />(?!=)|납입후/i.test(l.output));
+        d.formulaLtm = ltm?.formula ?? '';
+        d.formulaGtm = gtm?.formula ?? '';
+        break;
+      }
+    }
+    setModuleEditorData(d);
+    setModuleEditor(type);
+  }, [parsed]);
+
+  // ── 모듈 편집기 적용: form 데이터 → DSL 줄 생성 → replaceModuleSection
+  const applyModuleEditor = useCallback(() => {
+    if (!moduleEditor) return;
+    const d = moduleEditorData;
+    let body: string[] = [];
+    switch (moduleEditor) {
+      case ModuleType.SelectRiskRates:
+        body = [`ageCol    = ${d.ageCol}`, `genderCol = ${d.genderCol}`];
+        break;
+      case ModuleType.RateModifier:
+        body = (d.rows as any[]).filter(r => r.output && r.formula).map(r => `${r.output} = ${r.formula}`);
+        break;
+      case ModuleType.CalculateSurvivors:
+        body = [`mortalityCol = ${d.mortalityCol}`];
+        for (const row of (d.rows as any[])) {
+          if (!row.name) continue;
+          const rates = (row.rates as string).split(',').map((s: string) => s.trim()).filter(Boolean);
+          body.push(`lx_${row.name} = lx(${rates.join(', ')})`);
+          body.push(`Dx_${row.name} = lx_${row.name} * i_prem`);
+        }
+        break;
+      case ModuleType.ClaimsCalculator:
+        for (const row of (d.rows as any[])) {
+          if (!row.lxCol || !row.riskCol) continue;
+          const name = row.lxCol.replace(/^lx_?/i,'') || 'Mortality';
+          body.push(`dx_${name} = ${row.lxCol} * ${row.riskCol}`);
+          body.push(`Cx_${name} = dx_${name} * i_claim`);
+        }
+        break;
+      case ModuleType.NxMxCalculator:
+        for (const row of (d.nxRows as any[])) {
+          if (!row.dxCol) continue;
+          body.push(`Nx_${row.name} = cumsum_rev(${row.dxCol})`);
+        }
+        for (const row of (d.mxRows as any[])) {
+          if (!row.cxCol) continue;
+          const dp = row.deduct && row.deduct !== '0' ? `, deduct=${row.deduct}` : '';
+          body.push(`Mx_${row.name} = cumsum_rev(${row.cxCol}${dp})`);
+        }
+        break;
+      case ModuleType.PremiumComponent:
+        for (const row of (d.nnxRows as any[])) {
+          if (!row.nxCol) continue;
+          const name = row.nxCol.replace(/^Nx_?/i,'') || 'Mortality';
+          body.push(`NNX_${name} = Diff(${row.nxCol}, m)`);
+        }
+        for (const row of (d.bpvRows as any[])) {
+          if (!row.mxCol) continue;
+          const name = row.mxCol.replace(/^Mx_?/i,'') || 'Mortality';
+          body.push(`BPV_${name} = Diff(${row.mxCol}, n) * ${row.amount}`);
+        }
+        break;
+      case ModuleType.AdditionalName:
+        body = [`α1 = ${d.alpha1}`,`α2 = ${d.alpha2}`,`β1 = ${d.beta1}`,`β2 = ${d.beta2}`,`γ  = ${d.gamma}`];
+        break;
+      case ModuleType.NetPremiumCalculator:
+        body = [`${d.varName} = ${d.bpvCol} / ${d.nnxCol}(${d.period})`];
+        break;
+      case ModuleType.GrossPremiumCalculator:
+        body = [`${d.varName} = ${d.ppCol} / (1 - ${d.denomExpr})`];
+        break;
+      case ModuleType.ReserveCalculator:
+        if (d.formulaLtm) body.push(`V[t<=m] = ${d.formulaLtm}`);
+        if (d.formulaGtm) body.push(`V[t>m]  = ${d.formulaGtm}`);
+        break;
+    }
+    setDslText(replaceModuleSection(dslText, moduleEditor, body));
+    setModuleEditor(null);
+  }, [moduleEditor, moduleEditorData, dslText]);
+
   const updateSuggestions = useCallback((ta: HTMLTextAreaElement) => {
     const val = ta.value;
     const cursor = ta.selectionStart ?? 0;
@@ -964,71 +1238,24 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
           {/* ── 왼쪽: DSL 에디터 */}
           <div className="flex flex-col w-3/5 border-r" style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }}>
 
-            {/* ── 위험률 파일 불러오기 바 */}
-            <div className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b ${isDark ? 'border-gray-700 bg-gray-900' : 'border-blue-100 bg-blue-50'}`}>
-              <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={handleFileLoad} />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
-                  isDark
-                    ? 'bg-blue-800 hover:bg-blue-700 text-blue-200'
-                    : 'bg-blue-100 hover:bg-blue-200 text-blue-700 border border-blue-300'
-                }`}
-              >
-                📂 위험률 불러오기
-              </button>
-              <button
-                onClick={handleExampleLoad}
-                className={`px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 ${
-                  isDark
-                    ? 'bg-emerald-800 hover:bg-emerald-700 text-emerald-200'
-                    : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-700 border border-emerald-300'
-                }`}
-              >
-                📋 예제에서 불러오기
-              </button>
-              {loadedFileInfo ? (
-                <>
-                  <span className={`text-xs font-medium truncate max-w-[160px] ${isDark ? 'text-gray-200' : 'text-gray-700'}`}
-                        title={loadedFileInfo.name}>
-                    {loadedFileInfo.name}
-                  </span>
-                  <span className={`text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded font-mono ${
-                    isDark ? 'bg-emerald-900/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
-                  }`}>
-                    {loadedFileInfo.rowCount.toLocaleString()}행 · {loadedFileInfo.columns.length}열
-                  </span>
-                  <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                    ✓ 반영 완료
-                  </span>
-                  {/* SelectData 열 선택 버튼 */}
-                  <button
-                    onClick={() => {
-                      setColSelectorOpen(prev => {
-                        // 열릴 때 colSelectorDeathRate를 현재 items에서 동기화
-                        if (!prev) {
-                          setColSelectorDeathRate(
-                            colSelectorItems.find(i => i.newName === 'Death_Rate')?.originalName ?? ''
-                          );
-                        }
-                        return !prev;
-                      });
-                    }}
-                    className={`ml-1 px-2 py-0.5 rounded text-xs font-medium flex-shrink-0 flex items-center gap-1 ${
-                      colSelectorOpen
-                        ? (isDark ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white')
-                        : (isDark ? 'bg-violet-900/60 hover:bg-violet-800 text-violet-300' : 'bg-violet-100 hover:bg-violet-200 text-violet-700 border border-violet-300')
-                    }`}
-                  >
-                    🔧 열 선택 {colSelectorOpen ? '▲' : '▼'}
-                  </button>
-                </>
-              ) : (
-                <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-blue-400'}`}>
-                  CSV 불러오면 LoadData·SelectData가 자동 설정됩니다
+            {/* ── 위험률 파일 숨김 input */}
+            <input ref={fileInputRef} type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={handleFileLoad} />
+
+            {/* ── 파일 로드 정보 바 (파일이 로드된 경우에만 표시) */}
+            {loadedFileInfo && (
+              <div className={`flex-shrink-0 flex items-center gap-2 px-3 py-1.5 border-b ${isDark ? 'border-gray-700 bg-gray-900' : 'border-emerald-100 bg-emerald-50'}`}>
+                <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>✓</span>
+                <span className={`text-xs font-medium truncate max-w-[180px] ${isDark ? 'text-gray-200' : 'text-gray-700'}`}
+                      title={loadedFileInfo.name}>
+                  {loadedFileInfo.name}
                 </span>
-              )}
-            </div>
+                <span className={`text-[10px] flex-shrink-0 px-1.5 py-0.5 rounded font-mono ${
+                  isDark ? 'bg-emerald-900/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {loadedFileInfo.rowCount.toLocaleString()}행 · {loadedFileInfo.columns.length}열
+                </span>
+              </div>
+            )}
 
             {/* 에디터 툴바 */}
             <div className={`flex-shrink-0 border-b text-xs ${sub}`} style={{ borderColor: isDark ? '#374151' : '#e5e7eb' }}>
@@ -1177,7 +1404,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
             </div>
 
             {/* 라인 번호 + 에디터 */}
-            <div className={`flex flex-1 overflow-hidden font-mono text-xs ${isDark ? 'bg-gray-950' : 'bg-gray-50'}`} style={{ lineHeight: '1.6' }}>
+            <div className={`relative flex flex-1 overflow-hidden font-mono text-xs ${isDark ? 'bg-gray-950' : 'bg-gray-50'}`} style={{ lineHeight: '1.6' }}>
               <div
                 ref={lineNumRef}
                 aria-hidden
@@ -1189,22 +1416,74 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
               <textarea
                 ref={textareaRef}
                 value={dslText}
-                onChange={(e) => { setDslText(e.target.value); updateSuggestions(e.target as HTMLTextAreaElement); }}
+                onChange={(e) => { setDslText(e.target.value); updateSuggestions(e.target as HTMLTextAreaElement); updateCursorModule(e.target as HTMLTextAreaElement); }}
                 onKeyDown={handleEditorKeyDown}
                 onKeyUp={(e) => {
+                  updateCursorModule(e.currentTarget);
                   if (!['ArrowUp','ArrowDown','Enter','Tab','Escape'].includes(e.key))
                     updateSuggestions(e.currentTarget);
                 }}
+                onClick={(e) => updateCursorModule(e.currentTarget)}
                 onBlur={() => setTimeout(() => setSuggestions([]), 150)}
                 onScroll={(e) => {
-                  if (lineNumRef.current)
-                    lineNumRef.current.scrollTop = (e.target as HTMLTextAreaElement).scrollTop;
+                  const st = (e.target as HTMLTextAreaElement).scrollTop;
+                  if (lineNumRef.current) lineNumRef.current.scrollTop = st;
+                  setEditorScrollTop(st);
                 }}
                 spellCheck={false}
                 className={`flex-1 resize-none focus:outline-none p-3 ${isDark ? 'bg-gray-950 text-green-300 caret-green-400' : 'bg-gray-50 text-gray-800'}`}
                 style={{ lineHeight: '1.6' }}
                 placeholder="DSL을 입력하세요..."
               />
+
+              {/* ── 모듈별 오버레이 버튼 (## 헤더 줄마다 렌더링) */}
+              {dslText.split('\n').map((line, idx) => {
+                const t = line.trim();
+                if (!t.startsWith('## ')) return null;
+                const headerKey = t.slice(3).trim().toLowerCase().replace(/\s+/g,'');
+                const mtype = MODULE_HEADER_MAP[headerKey];
+                if (!mtype) return null;
+                const LINE_H = 12 * 1.6;
+                const PAD_TOP = 12;
+                const top = PAD_TOP + idx * LINE_H - editorScrollTop;
+
+                // LoadData: 파일 불러오기 버튼
+                if (mtype === ModuleType.LoadData) return (
+                  <div key={idx} className="absolute right-2 z-10 flex items-center gap-1" style={{ top, pointerEvents: 'auto' }}>
+                    <button onMouseDown={(e) => { e.preventDefault(); fileInputRef.current?.click(); }} title="위험률 CSV 파일 불러오기"
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium shadow-sm border ${isDark ? 'bg-blue-900/80 hover:bg-blue-700 text-blue-200 border-blue-600' : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300'}`}>
+                      📂 불러오기
+                    </button>
+                    <button onMouseDown={(e) => { e.preventDefault(); handleExampleLoad(); }} title="예제 데이터 불러오기"
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium shadow-sm border ${isDark ? 'bg-emerald-900/80 hover:bg-emerald-700 text-emerald-200 border-emerald-600' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'}`}>
+                      📋 예제
+                    </button>
+                  </div>
+                );
+
+                // SelectData: 열 선택 버튼 (파일 로드 후)
+                if (mtype === ModuleType.SelectData) return loadedFileInfo ? (
+                  <div key={idx} className="absolute right-2 z-10 flex items-center gap-1" style={{ top, pointerEvents: 'auto' }}>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); setColSelectorOpen(prev => { if (!prev) setColSelectorDeathRate(colSelectorItems.find(i => i.newName === 'Death_Rate')?.originalName ?? ''); return !prev; }); }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium shadow-sm border flex items-center gap-1 ${colSelectorOpen ? (isDark ? 'bg-violet-600 text-white border-violet-500' : 'bg-violet-600 text-white border-violet-500') : (isDark ? 'bg-violet-900/80 hover:bg-violet-700 text-violet-200 border-violet-600' : 'bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-300')}`}>
+                      🔧 열 선택 {colSelectorOpen ? '▲' : '▼'}
+                    </button>
+                  </div>
+                ) : null;
+
+                // 나머지 모듈: 편집 버튼
+                const isOpen = moduleEditor === mtype;
+                return (
+                  <div key={idx} className="absolute right-2 z-10 flex items-center gap-1" style={{ top, pointerEvents: 'auto' }}>
+                    <button
+                      onMouseDown={(e) => { e.preventDefault(); if (isOpen) setModuleEditor(null); else openModuleEditor(mtype); }}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium shadow-sm border flex items-center gap-1 ${isOpen ? (isDark ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-indigo-600 text-white border-indigo-500') : (isDark ? 'bg-indigo-900/80 hover:bg-indigo-700 text-indigo-200 border-indigo-600' : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300')}`}>
+                      🔧 편집 {isOpen ? '▲' : '▼'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
 
             {/* 자동완성 드롭다운 */}
@@ -1401,6 +1680,384 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
             </div>
           )}
 
+          {/* ── 모듈 편집기 팝업 */}
+          {moduleEditor && moduleEditor !== ModuleType.LoadData && moduleEditor !== ModuleType.SelectData && (() => {
+            const d = moduleEditorData;
+            const label = MODULE_LABELS[moduleEditor] ?? moduleEditor;
+            const info = MODULE_DESCRIPTIONS[moduleEditor];
+            // ── parsed.sections에서 각 단계별 실제 출력 컬럼 추출 (ParameterInputModal과 동일 방식)
+            const secOuts = (type: ModuleType) =>
+              parsed.sections.find(s => s.type === type)?.lines.map(l => l.output) ?? [];
+
+            // SelectData 출력 열 (RatingBasisBuilder·CalculateSurvivors용 데이터 열 목록)
+            const selectDataOuts   = secOuts(ModuleType.SelectData);
+            const dataColOpts      = selectDataOuts.length ? selectDataOuts : (loadedFileInfo?.columns ?? []);
+            // RateModifier 출력 (있으면 추가)
+            const rateModOuts      = secOuts(ModuleType.RateModifier);
+            const riskColOpts      = [...new Set([...dataColOpts, ...rateModOuts])];
+
+            // CalculateSurvivors 출력에서 lx_* / Dx_*
+            const survivorOuts     = secOuts(ModuleType.CalculateSurvivors);
+            const lxColOpts        = survivorOuts.filter(v => /^lx_/i.test(v));
+            const dxBigVars        = survivorOuts.filter(v => /^Dx_/i.test(v));
+            // fallback: DSL 전체 변수에서
+            const allDslVars       = [...new Set([...extractDSLVars(dslText), ...BUILTIN_VARS])];
+            const lxColOptsFb      = lxColOpts.length  ? lxColOpts  : allDslVars.filter(v => /^lx_/i.test(v));
+            const dxBigVarsFb      = dxBigVars.length  ? dxBigVars  : allDslVars.filter(v => /^Dx_/i.test(v));
+
+            // ClaimsCalculator 출력에서 Cx_*
+            const claimsOuts       = secOuts(ModuleType.ClaimsCalculator);
+            const cxBigVars        = claimsOuts.filter(v => /^Cx_/i.test(v));
+            const cxBigVarsFb      = cxBigVars.length  ? cxBigVars  : allDslVars.filter(v => /^Cx_/i.test(v));
+
+            // NxMxCalculator 출력에서 Nx_* / Mx_*
+            const nxmxOuts         = secOuts(ModuleType.NxMxCalculator);
+            const nxVars           = nxmxOuts.filter(v => /^Nx_/i.test(v));
+            const mxVars           = nxmxOuts.filter(v => /^Mx_/i.test(v));
+            const nxVarsFb         = nxVars.length     ? nxVars     : allDslVars.filter(v => /^Nx_/i.test(v));
+            const mxVarsFb         = mxVars.length     ? mxVars     : allDslVars.filter(v => /^Mx_/i.test(v));
+
+            // PremiumComponent 출력에서 NNX_* / BPV_*
+            const premOuts         = secOuts(ModuleType.PremiumComponent);
+            const nnxVars          = premOuts.filter(v => /^NNX_/i.test(v));
+            const bpvVars          = premOuts.filter(v => /^BPV_/i.test(v));
+            const nnxVarsFb        = nnxVars.length    ? nnxVars    : allDslVars.filter(v => /^NNX_/i.test(v));
+            const bpvVarsFb        = bpvVars.length    ? bpvVars    : allDslVars.filter(v => /^BPV_/i.test(v));
+
+            // NetPremiumCalculator 출력 (GrossPremiumCalculator PP 열용)
+            const netOuts          = secOuts(ModuleType.NetPremiumCalculator);
+            const ppVars           = netOuts.length    ? netOuts    : allDslVars.filter(v => /^PP/.test(v));
+
+            const inputCls = `flex-1 text-xs px-2 py-0.5 rounded border focus:outline-none ${isDark ? 'bg-gray-800 border-gray-600 text-gray-100 focus:border-indigo-400' : 'bg-white border-gray-300 text-gray-800 focus:border-indigo-400'}`;
+            const selCls   = `flex-1 text-xs px-1 py-0.5 rounded border focus:outline-none ${isDark ? 'bg-gray-800 border-gray-600 text-gray-100' : 'bg-white border-gray-300 text-gray-800'}`;
+            const labelCls = `text-[10px] font-semibold flex-shrink-0 w-20 ${isDark ? 'text-gray-400' : 'text-gray-500'}`;
+            const rowDel   = `px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 ${isDark ? 'bg-gray-700 hover:bg-red-900 text-gray-400 hover:text-red-300' : 'bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-500'}`;
+            const addBtn   = `px-2 py-0.5 rounded text-[10px] font-medium ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-300 border border-gray-600' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300'}`;
+            const upd = (patch: Record<string, any>) => setModuleEditorData(prev => ({ ...prev, ...patch }));
+            const updRow = (key: string, i: number, patch: Record<string, any>) =>
+              setModuleEditorData(prev => ({ ...prev, [key]: (prev[key] as any[]).map((r: any, j: number) => j === i ? { ...r, ...patch } : r) }));
+            const addRow = (key: string, tmpl: any) =>
+              setModuleEditorData(prev => ({ ...prev, [key]: [...(prev[key] as any[]), { ...tmpl }] }));
+            const delRow = (key: string, i: number) =>
+              setModuleEditorData(prev => ({ ...prev, [key]: (prev[key] as any[]).filter((_: any, j: number) => j !== i) }));
+
+            const Select = ({ value, onChange, opts }: { value: string; onChange: (v: string) => void; opts: string[] }) => (
+              <select value={value} onChange={e => onChange(e.target.value)} className={selCls}>
+                {!opts.includes(value) && <option value={value}>{value}</option>}
+                {opts.map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            );
+
+            let formContent: React.ReactNode = null;
+            switch (moduleEditor) {
+              case ModuleType.SelectRiskRates:
+                formContent = (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2"><span className={labelCls}>연령 열</span><Select value={d.ageCol} onChange={v => upd({ ageCol: v })} opts={dataColOpts.length ? dataColOpts : allDslVars} /></div>
+                    <div className="flex items-center gap-2"><span className={labelCls}>성별 열</span><Select value={d.genderCol} onChange={v => upd({ genderCol: v })} opts={dataColOpts.length ? dataColOpts : allDslVars} /></div>
+                  </div>
+                );
+                break;
+              case ModuleType.RateModifier:
+                formContent = (
+                  <div className="space-y-1.5 text-xs">
+                    <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>수식 추가 시 기존 위험률을 변환합니다. 비워두면 통과합니다.</p>
+                    {(d.rows as any[]).map((row: any, i: number) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <input value={row.output} onChange={e => updRow('rows', i, { output: e.target.value })} placeholder="출력열명" className={`${inputCls} w-28 flex-none`} />
+                        <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>=</span>
+                        <input value={row.formula} onChange={e => updRow('rows', i, { formula: e.target.value })} placeholder="수식 (예: Death_Rate * 1.5)" className={inputCls} />
+                        <button onClick={() => delRow('rows', i)} className={rowDel}>✕</button>
+                      </div>
+                    ))}
+                    <button onClick={() => addRow('rows', { output: '', formula: '' })} className={addBtn}>+ 수식 추가</button>
+                    <div className={`mt-2 text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>빠른 스니펫 (위험률 열 클릭 후 배율 선택):</div>
+                    <div className="flex flex-wrap gap-1">
+                      {riskColOpts.filter(v => !/^(Age|Sex|i_prem|i_claim)$/.test(v)).map(col =>
+                        ['1.5','2.0','0.5'].map(mul => (
+                          <button key={col+mul} onClick={() => addRow('rows', { output: `Modified_${col}`, formula: `${col} * ${mul}` })} className={addBtn}>{col}×{mul}</button>
+                        ))
+                      ).flat().slice(0, 9)}
+                    </div>
+                  </div>
+                );
+                break;
+              case ModuleType.CalculateSurvivors:
+                formContent = (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className={labelCls}>사망위험률열</span>
+                      <Select value={d.mortalityCol}
+                        onChange={v => upd({ mortalityCol: v })}
+                        opts={riskColOpts.filter(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c)).length
+                          ? riskColOpts.filter(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c))
+                          : allDslVars} />
+                    </div>
+                    <p className={`text-[10px] font-semibold ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>lx 항목 — Dx도 자동 생성됩니다</p>
+                    {(d.rows as any[]).map((row: any, i: number) => {
+                      // 위험률 열 변경 시 이름 자동 생성
+                      const handleRatesChange = (v: string) => {
+                        const autoName = v.split(',')[0].trim().replace(/^(Death|Lapse|Decrement)_?/i, '') || v.split(',')[0].trim();
+                        const nameUnchanged = !row.name || row.name === (row.rates.split(',')[0].trim().replace(/^(Death|Lapse|Decrement)_?/i,'') || row.rates.split(',')[0].trim());
+                        updRow('rows', i, { rates: v, ...(nameUnchanged ? { name: autoName } : {}) });
+                      };
+                      return (
+                        <div key={i} className="flex items-center gap-1">
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>lx_</span>
+                          <input value={row.name} onChange={e => updRow('rows', i, { name: e.target.value })} placeholder="이름" className={`${inputCls} w-20 flex-none`} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>=lx(</span>
+                          <Select value={row.rates.split(',')[0].trim()}
+                            onChange={v => handleRatesChange(v)}
+                            opts={riskColOpts.filter(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c)).length
+                              ? riskColOpts.filter(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c))
+                              : allDslVars} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>)</span>
+                          <button onClick={() => delRow('rows', i)} className={rowDel}>✕</button>
+                        </div>
+                      );
+                    })}
+                    <button onClick={() => {
+                      const defRisk = riskColOpts.find(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c)) ?? d.mortalityCol;
+                      const autoName = defRisk.replace(/^(Death|Lapse|Decrement)_?/i,'') || defRisk;
+                      addRow('rows', { name: autoName, rates: defRisk });
+                    }} className={addBtn}>+ lx 추가</button>
+                  </div>
+                );
+                break;
+              case ModuleType.ClaimsCalculator:
+                formContent = (
+                  <div className="space-y-2 text-xs">
+                    <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>각 행마다 dx_이름 / Cx_이름이 자동 생성됩니다.</p>
+                    {(d.rows as any[]).map((row: any, i: number) => (
+                      <div key={i} className="flex items-center gap-1">
+                        <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>lx열</span>
+                        <Select value={row.lxCol}
+                          onChange={v => updRow('rows', i, { lxCol: v })}
+                          opts={lxColOptsFb.length ? lxColOptsFb : allDslVars} />
+                        <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>×</span>
+                        <Select value={row.riskCol}
+                          onChange={v => updRow('rows', i, { riskCol: v })}
+                          opts={riskColOpts.filter(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c)).length
+                            ? riskColOpts.filter(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c))
+                            : allDslVars} />
+                        <span className={`text-[10px] flex-shrink-0 font-medium ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                          → dx_{row.lxCol.replace(/^lx_?/i,'')}
+                        </span>
+                        <button onClick={() => delRow('rows', i)} className={rowDel}>✕</button>
+                      </div>
+                    ))}
+                    <button onClick={() => {
+                      const defLx = lxColOptsFb[0] ?? 'lx_Mortality';
+                      const defRisk = riskColOpts.find(c => !/^(Age|Sex|i_prem|i_claim)$/.test(c)) ?? 'Death_Rate';
+                      addRow('rows', { lxCol: defLx, riskCol: defRisk });
+                    }} className={addBtn}>+ 항목 추가</button>
+                  </div>
+                );
+                break;
+              case ModuleType.NxMxCalculator:
+                formContent = (
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>Nx 항목 — 보험료 납입연금현가</p>
+                      {(d.nxRows as any[]).map((row: any, i: number) => (
+                        <div key={i} className="flex items-center gap-1 mb-1">
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>Nx_</span>
+                          <input value={row.name} onChange={e => updRow('nxRows', i, { name: e.target.value })} placeholder="이름" className={`${inputCls} w-20 flex-none`} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>=Σrev(</span>
+                          <Select value={row.dxCol}
+                            onChange={v => {
+                              const autoName = v.replace(/^Dx_?/i,'');
+                              const nameUnchanged = !row.name || row.name === row.dxCol.replace(/^Dx_?/i,'');
+                              updRow('nxRows', i, { dxCol: v, ...(nameUnchanged ? { name: autoName } : {}) });
+                            }}
+                            opts={dxBigVarsFb.length ? dxBigVarsFb : allDslVars} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>)</span>
+                          <button onClick={() => delRow('nxRows', i)} className={rowDel}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={() => {
+                        const defDx = dxBigVarsFb[0] ?? 'Dx_Mortality';
+                        addRow('nxRows', { dxCol: defDx, name: defDx.replace(/^Dx_?/i,'') });
+                      }} className={addBtn}>+ Nx 추가</button>
+                    </div>
+                    <div>
+                      <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-orange-300' : 'text-orange-600'}`}>Mx 항목 — 사망급부현가</p>
+                      {(d.mxRows as any[]).map((row: any, i: number) => (
+                        <div key={i} className="flex items-center gap-1 mb-1">
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>Mx_</span>
+                          <input value={row.name} onChange={e => updRow('mxRows', i, { name: e.target.value })} placeholder="이름" className={`${inputCls} w-20 flex-none`} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>=Σrev(</span>
+                          <Select value={row.cxCol}
+                            onChange={v => {
+                              const autoName = v.replace(/^Cx_?/i,'');
+                              const nameUnchanged = !row.name || row.name === row.cxCol.replace(/^Cx_?/i,'');
+                              updRow('mxRows', i, { cxCol: v, ...(nameUnchanged ? { name: autoName } : {}) });
+                            }}
+                            opts={cxBigVarsFb.length ? cxBigVarsFb : allDslVars} />
+                          <select value={row.deduct} onChange={e => updRow('mxRows', i, { deduct: e.target.value })} className={`w-28 flex-none ${selCls}`}>
+                            <option value="0">공제없음</option><option value="0.25">deduct=0.25 (3개월)</option><option value="0.5">deduct=0.5 (6개월)</option>
+                          </select>
+                          <button onClick={() => delRow('mxRows', i)} className={rowDel}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={() => {
+                        const defCx = cxBigVarsFb[0] ?? 'Cx_Mortality';
+                        addRow('mxRows', { cxCol: defCx, name: defCx.replace(/^Cx_?/i,''), deduct: '0' });
+                      }} className={addBtn}>+ Mx 추가</button>
+                    </div>
+                  </div>
+                );
+                break;
+              case ModuleType.PremiumComponent:
+                formContent = (
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>NNX 항목 — 납입연금현가 (Year/Half/Quarter/Month 자동 생성)</p>
+                      {(d.nnxRows as any[]).map((row: any, i: number) => (
+                        <div key={i} className="flex items-center gap-1 mb-1">
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>NNX_* = Diff(</span>
+                          <Select value={row.nxCol}
+                            onChange={v => updRow('nnxRows', i, { nxCol: v })}
+                            opts={nxVarsFb.length ? nxVarsFb : allDslVars} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>, m)</span>
+                          <button onClick={() => delRow('nnxRows', i)} className={rowDel}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={() => addRow('nnxRows', { nxCol: nxVarsFb[0] ?? 'Nx_Mortality' })} className={addBtn}>+ NNX 추가</button>
+                    </div>
+                    <div>
+                      <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-orange-300' : 'text-orange-600'}`}>BPV 항목 — 급부현가</p>
+                      {(d.bpvRows as any[]).map((row: any, i: number) => (
+                        <div key={i} className="flex items-center gap-1 mb-1">
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>BPV_* = Diff(</span>
+                          <Select value={row.mxCol}
+                            onChange={v => updRow('bpvRows', i, { mxCol: v })}
+                            opts={mxVarsFb.length ? mxVarsFb : allDslVars} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>, n) ×</span>
+                          <input type="number" value={row.amount} onChange={e => updRow('bpvRows', i, { amount: Number(e.target.value) })} className={`${inputCls} w-24 flex-none`} />
+                          <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>원</span>
+                          <button onClick={() => delRow('bpvRows', i)} className={rowDel}>✕</button>
+                        </div>
+                      ))}
+                      <button onClick={() => addRow('bpvRows', { mxCol: mxVarsFb[0] ?? 'Mx_Mortality', amount: 10000 })} className={addBtn}>+ BPV 추가</button>
+                    </div>
+                  </div>
+                );
+                break;
+              case ModuleType.AdditionalName:
+                formContent = (
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {[['α1','alpha1','신계약비(초년도)'],['α2','alpha2','신계약비(갱신)'],['β1','beta1','유지비(납입중)'],['β2','beta2','유지비(납입후)'],['γ','gamma','수금비']].map(([sym, key, hint]) => (
+                      <div key={key} className="flex items-center gap-1.5">
+                        <span className={`font-mono text-sm flex-shrink-0 w-5 ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>{sym}</span>
+                        <input type="number" step="0.001" value={d[key]} onChange={e => upd({ [key]: e.target.value })} className={`${inputCls} w-20 flex-none`} />
+                        <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{hint}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+                break;
+              case ModuleType.NetPremiumCalculator:
+                formContent = (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2"><span className={labelCls}>변수명</span><input value={d.varName} onChange={e => upd({ varName: e.target.value })} className={inputCls} /></div>
+                    <div className="flex items-center gap-2"><span className={labelCls}>BPV 열</span>
+                      <Select value={d.bpvCol} onChange={v => upd({ bpvCol: v })} opts={bpvVarsFb.length ? bpvVarsFb : allDslVars} />
+                    </div>
+                    <div className="flex items-center gap-2"><span className={labelCls}>NNX 열</span>
+                      <Select value={d.nnxCol} onChange={v => upd({ nnxCol: v })} opts={nnxVarsFb.length ? nnxVarsFb : allDslVars} />
+                    </div>
+                    <div className="flex items-center gap-2"><span className={labelCls}>납입 단위</span>
+                      <select value={d.period} onChange={e => upd({ period: e.target.value })} className={selCls}>
+                        {['Year','Half','Quarter','Month'].map(p => <option key={p} value={p}>{p}</option>)}
+                      </select>
+                    </div>
+                    <p className={`text-[10px] font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>→ {d.varName} = {d.bpvCol} / {d.nnxCol}({d.period})</p>
+                  </div>
+                );
+                break;
+              case ModuleType.GrossPremiumCalculator:
+                formContent = (
+                  <div className="space-y-2 text-xs">
+                    <div className="flex items-center gap-2"><span className={labelCls}>변수명</span><input value={d.varName} onChange={e => upd({ varName: e.target.value })} className={inputCls} /></div>
+                    <div className="flex items-center gap-2"><span className={labelCls}>PP 열</span>
+                      <Select value={d.ppCol} onChange={v => upd({ ppCol: v })} opts={ppVars.length ? ppVars : allDslVars} />
+                    </div>
+                    <div className="flex items-center gap-2"><span className={labelCls}>분모 수식</span>
+                      <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>(1 − </span>
+                      <input value={d.denomExpr} onChange={e => upd({ denomExpr: e.target.value })} className={inputCls} />
+                      <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>)</span>
+                    </div>
+                    <p className={`text-[10px] font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>→ {d.varName} = {d.ppCol} / (1 - {d.denomExpr})</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[['α1+α2','α1 + α2'],['α1+α2+β1','α1 + α2 + β1'],['α1+α2+β1+β2','α1 + α2 + β1 + β2']].map(([lbl, expr]) => (
+                        <button key={lbl} onClick={() => upd({ denomExpr: expr })} className={addBtn}>{lbl}</button>
+                      ))}
+                    </div>
+                  </div>
+                );
+                break;
+              case ModuleType.ReserveCalculator: {
+                const refVars = [...new Set([...bpvVarsFb, ...nnxVarsFb, ...nxVarsFb, ...mxVarsFb])].slice(0, 10);
+                formContent = (
+                  <div className="space-y-2 text-xs">
+                    <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>V[t] = 미래급부현가 − 미래보험료현가. m=납입만료, n=보험만기.</p>
+                    <div>
+                      <label className={`text-[10px] font-semibold ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>V[t≤m] — 납입기간 중</label>
+                      <textarea rows={2} value={d.formulaLtm} onChange={e => upd({ formulaLtm: e.target.value })}
+                        className={`w-full mt-0.5 font-mono text-[10px] px-2 py-1 rounded border focus:outline-none ${isDark ? 'bg-gray-800 border-gray-600 text-green-300' : 'bg-gray-50 border-gray-300 text-gray-800'}`} />
+                    </div>
+                    <div>
+                      <label className={`text-[10px] font-semibold ${isDark ? 'text-orange-300' : 'text-orange-600'}`}>V[t&gt;m] — 납입 완료 후</label>
+                      <textarea rows={2} value={d.formulaGtm} onChange={e => upd({ formulaGtm: e.target.value })}
+                        className={`w-full mt-0.5 font-mono text-[10px] px-2 py-1 rounded border focus:outline-none ${isDark ? 'bg-gray-800 border-gray-600 text-green-300' : 'bg-gray-50 border-gray-300 text-gray-800'}`} />
+                    </div>
+                    {refVars.length > 0 && (
+                      <div>
+                        <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>변수 클릭 → 클립보드 복사</p>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {refVars.map(v => (
+                            <button key={v} className={`${addBtn} font-mono`}
+                              onMouseDown={e => { e.preventDefault(); navigator.clipboard.writeText(v).catch(()=>{}); }}>{v}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+                break;
+              }
+              default:
+                formContent = <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>이 모듈은 직접 편집을 지원하지 않습니다.</p>;
+            }
+
+            return (
+              <div className="absolute inset-0 z-50 flex items-start justify-center pt-10 px-8"
+                   style={{ background: 'rgba(0,0,0,0.45)' }}
+                   onClick={(e) => { if (e.target === e.currentTarget) setModuleEditor(null); }}>
+                <div className={`w-full max-w-lg rounded-xl shadow-2xl border flex flex-col overflow-hidden ${isDark ? 'bg-gray-900 border-indigo-700' : 'bg-white border-indigo-200'}`} style={{ maxHeight: '75vh' }}>
+                  {/* 헤더 */}
+                  <div className={`flex items-start justify-between px-4 py-3 border-b ${isDark ? 'border-indigo-700 bg-indigo-950/40' : 'border-indigo-200 bg-indigo-50'}`}>
+                    <div>
+                      <p className={`text-sm font-semibold ${isDark ? 'text-indigo-200' : 'text-indigo-800'}`}>🔧 {label}</p>
+                      {info && <p className={`text-[11px] mt-0.5 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{info.desc}</p>}
+                    </div>
+                    <button onClick={() => setModuleEditor(null)} className={`text-xs p-1 ${isDark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-400 hover:text-gray-700'}`}>✕</button>
+                  </div>
+                  {/* 본문 */}
+                  <div className="flex-1 overflow-y-auto px-4 py-3">
+                    {formContent}
+                  </div>
+                  {/* 푸터 */}
+                  <div className={`flex items-center justify-end gap-2 px-4 py-3 border-t ${isDark ? 'border-indigo-700 bg-gray-900' : 'border-indigo-100 bg-indigo-50'}`}>
+                    <button onClick={() => setModuleEditor(null)} className={`px-3 py-1.5 rounded text-xs font-medium ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-300'}`}>취소</button>
+                    <button onClick={applyModuleEditor} className="px-3 py-1.5 rounded text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white">✓ DSL에 적용</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* ── 오른쪽: 미리보기 + 검증 */}
           <div className="flex flex-col w-2/5 overflow-y-auto">
             <div className="p-4 space-y-3 flex-1">
@@ -1519,19 +2176,44 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                 </div>
               </div>
 
-              {/* 문법 도움말 */}
+              {/* 문법 도움말 / 모듈 설명 */}
               <div className={`p-2 rounded border text-xs ${isDark ? 'border-blue-900 bg-blue-950/20 text-blue-300' : 'border-blue-100 bg-blue-50 text-blue-700'}`}>
-                <p className="font-semibold mb-1">📌 DSL 문법</p>
-                <p className="font-mono"># 상품명 | age=40 | pay=20 | rate=2.5</p>
-                <p className="font-mono">## 모듈명</p>
-                <p className="font-mono">출력열 = 입력열/수식</p>
-                <p className="mt-1 font-mono text-[10px]">// 주석 · Ctrl+S 저장</p>
-                <p className={`mt-1.5 font-semibold text-[10px] ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>🔢 NxMx 역방향 누적합</p>
-                <p className="font-mono text-[10px]">Nx_X = cumsum_rev(Dx_X)</p>
-                <p className="font-mono text-[10px]">Mx_X = cumsum_rev(Cx_X, deduct=0.25)</p>
-                <p className={`text-[10px] mt-0.5 ${isDark ? 'text-blue-400' : 'text-blue-500'}`}>
-                  Toolbar의 Σ 버튼으로 sum/cumsum_rev 전환 가능
-                </p>
+                {cursorModule && MODULE_DESCRIPTIONS[cursorModule] ? (() => {
+                  const info = MODULE_DESCRIPTIONS[cursorModule]!;
+                  const label = MODULE_LABELS[cursorModule] ?? cursorModule;
+                  return (
+                    <>
+                      <p className={`font-semibold mb-1 ${isDark ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                        📌 {label}
+                      </p>
+                      <p className={`mb-1.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+                        {info.desc}
+                      </p>
+                      {info.formulas.length > 0 && (
+                        <ul className="space-y-0.5">
+                          {info.formulas.map((f, i) => (
+                            <li key={i} className={`font-mono text-[10px] leading-relaxed ${
+                              f.startsWith('  ') ? 'pl-3 opacity-80' : ''
+                            } ${isDark ? 'text-emerald-300' : 'text-emerald-700'}`}>
+                              {f.startsWith('  ') ? f : `• ${f}`}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  );
+                })() : (
+                  <>
+                    <p className="font-semibold mb-1">📌 DSL 문법</p>
+                    <p className="font-mono"># 상품명 | age=40 | pay=20 | rate=2.5</p>
+                    <p className="font-mono">## 모듈명</p>
+                    <p className="font-mono">출력열 = 입력열/수식</p>
+                    <p className="mt-1 font-mono text-[10px]">// 주석 · Ctrl+S 저장</p>
+                    <p className={`mt-1 text-[10px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      편집기 안에서 커서를 이동하면 해당 모듈의 문법이 표시됩니다
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>

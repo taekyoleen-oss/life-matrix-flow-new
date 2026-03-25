@@ -1005,61 +1005,40 @@ export function analyzeFlowErrors(model: DSLModel): DSLFlowError[] {
 export const EXAMPLE_DSL = `# 종신보험 A형 | age=40 | sex=Male | pay=20 | rate=2.5
 
 ## LoadData
-// 위험률 CSV 파일을 불러옵니다
 file = Risk_Rates.csv
 
 ## SelectData
-// 계산에 필요한 열만 선택합니다 (출력열이름 = 원본열이름)
-// Death_Rate로 이름 변경된 열은 Survivors Calculator의 사망위험률로 자동 적용됩니다
-// 위험률 파일을 불러오면 열 선택 버튼으로 추가하세요
+// 출력열이름 = 원본열이름  (Death_Rate는 사망위험률로 자동 적용)
 Age = Age
 Sex = Sex
 Death_Rate = Male_Mortality
 
 ## RatingBasisBuilder
-// 가입연령(ageCol)·성별(genderCol)로 보험기간 n 동안의 위험률 행을 선택합니다
-// 할인율(i_prem, i_claim)을 자동으로 계산합니다
 ageCol    = Age
 genderCol = Sex
 
 ## RateModifier
-// 위험률 수정이 필요한 경우 수식을 추가하세요. 기본값은 아무 작업도 하지 않습니다.
-// 예: Modified_Rate = Death_Rate * 1.5
+// 수정이 필요하면 수식을 추가하세요. 예: Modified_Rate = Death_Rate * 1.5
 
 ## CalculateSurvivors
-// mortalityCol: 사망위험률 열 이름 (Mortality Rate Column 항목과 연동)
-// lx(위험률): 나이별 생존자수  [초기값 lx[0] = 100,000]
-//   lx[t] = lx[t-1] × (1 - 위험률[t])
-//   다중감소 예: lx(사망률, 해약률)
-// Dx: 할인 생존자수 = lx × i_prem
 mortalityCol = Death_Rate
 lx_Mortality = lx(Death_Rate)
 Dx_Mortality = lx_Mortality * i_prem
 
 ## ClaimsCalculator
-// dx: 나이별 사망자수 = lx × 사망위험률
-// Cx: 할인 사망자수 = dx × i_claim
 dx_Mortality = lx_Mortality * Death_Rate
 Cx_Mortality = dx_Mortality * i_claim
 
 ## NxMxCalculator
-// cumsum_rev(Dx): 역방향 누적합 — 각 나이부터 만기까지의 Dx 합계
-//   Nx[t] = Dx[t] + Dx[t+1] + ... + Dx[만기]
-//   Nx: 보험료 납입연금 현가 / Mx: 사망급부 현가 계산에 사용
-// 공제(대기기간) 옵션: cumsum_rev(Cx, deduct=0.25)  ← 25% 공제(3개월 대기)
 Nx_Mortality = cumsum_rev(Dx_Mortality)
 Mx_Mortality = cumsum_rev(Cx_Mortality)
 
 ## PremiumComponent
-// NNX = Diff(Nx, m)  ← Nx[0] - Nx[m]  (납입기간 보험료 연금현가)
-//   생성변수: NNX(Year), NNX(Half), NNX(Quarter), NNX(Month)
-// BPV = Diff(Mx, n) × 보험가입금액  ← (Mx[0] - Mx[n]) × 금액
 NNX_Mortality = Diff(Nx_Mortality, m)
 BPV_Mortality = Diff(Mx_Mortality, n) * 10000
 
 ## AdditionalName
-// 영업보험료 계산용 사업비 계수 (0이면 사업비 없음)
-// α1, α2: 신계약비율  /  β1, β2: 유지비율  /  γ: 수금비율
+// α1,α2: 신계약비  β1,β2: 유지비  γ: 수금비  (0이면 사업비 없음)
 α1 = 0
 α2 = 0
 β1 = 0
@@ -1067,17 +1046,12 @@ BPV_Mortality = Diff(Mx_Mortality, n) * 10000
 γ  = 0
 
 ## NetPremiumCalculator
-// 순보험료 PP = 급부현가(BPV_Mortality) ÷ 보험료현가(NNX_Mortality(Year))
-//   수지상등 원칙: 미래 급부현가 = 미래 보험료현가
 PP = BPV_Mortality / NNX_Mortality(Year)
 
 ## GrossPremiumCalculator
-// 영업보험료 GP = 순보험료 PP ÷ (1 - 사업비율)
 GP = PP / (1 - α1 - α2)
 
 ## ReserveCalculator
-// 순보험료식 책임준비금: V[t] = 미래급부현가 - 미래보험료현가 (t 시점 기준)
-// V[t<=m]: 납입기간 중  /  V[t>m]: 납입 완료 후
 V[t<=m] = (Mx_Mortality[t] - Mx_Mortality[n]) / lx_Mortality[t] - GP * (Nx_Mortality[t] - Nx_Mortality[m]) / lx_Mortality[t]
 V[t>m]  = (Mx_Mortality[t] - Mx_Mortality[n]) / lx_Mortality[t]
 `.trim();
