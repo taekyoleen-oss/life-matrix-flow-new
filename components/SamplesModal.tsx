@@ -9,6 +9,7 @@ import {
   updateAutoflowSample,
   updateSampleModelContent,
   fetchAutoflowSampleById,
+  deleteSampleInputData,
 } from "../utils/supabase-samples";
 
 interface Sample {
@@ -91,6 +92,8 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
     modelFile: null as File | null,
     inputDataFile: null as File | null,
     inputDataName: "",
+    deleteInputData: false,
+    deleteModelFile: false,
   });
   const [editSaving, setEditSaving] = React.useState(false);
   const [editError, setEditError] = React.useState<string | null>(null);
@@ -98,6 +101,7 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
   const [editCurrentContent, setEditCurrentContent] = React.useState<{
     modelName: string;
     modelJson: string | null;
+    inputDataId: string | null;
     inputDataName: string | null;
     inputDataContent: string | null;
   } | null>(null);
@@ -122,6 +126,8 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
       modelFile: null,
       inputDataFile: null,
       inputDataName: sample.inputData || "",
+      deleteInputData: false,
+      deleteModelFile: false,
     });
 
     // Supabase에서 실제 첨부 파일 내용 로드
@@ -133,6 +139,7 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
           setEditCurrentContent({
             modelName: full.model_name,
             modelJson: JSON.stringify(full.file_content, null, 2),
+            inputDataId: full.input_data_id,
             inputDataName: full.input_data_name,
             inputDataContent: full.input_data_content,
           });
@@ -170,18 +177,18 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
   const handleEditSave = async () => {
     if (!editingSample || !editingSample.id || !(editingSample as Sample & { modelId?: string }).modelId) return;
     const modelId = (editingSample as Sample & { modelId?: string }).modelId as string;
+
+    if (editForm.deleteModelFile && !editForm.modelFile) {
+      setEditError("모델 파일을 삭제하려면 새 파일을 선택해 주세요.");
+      return;
+    }
+
     setEditSaving(true);
     setEditError(null);
     try {
       await updateSampleModel(modelId, { name: editForm.name.trim() });
 
-      let inputDataId: string | undefined = undefined;
-      if (editForm.inputDataFile && editForm.inputDataName.trim()) {
-        const content = await editForm.inputDataFile.text();
-        const inputResult = await createSampleInputData(editForm.inputDataName.trim(), content);
-        if (inputResult) inputDataId = inputResult.id;
-      }
-
+      // 모델 파일 교체 또는 재업로드
       if (editForm.modelFile) {
         const modelText = await editForm.modelFile.text();
         let modelData: { modules?: unknown[]; connections?: unknown[] };
@@ -197,11 +204,34 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
         await updateSampleModelContent(modelId, { modules, connections });
       }
 
+      // 입력 데이터 처리
+      let inputDataUpdate: { input_data_id?: string | null } = {};
+
+      if (editForm.deleteInputData) {
+        // 기존 입력 데이터 삭제
+        if (editCurrentContent?.inputDataId) {
+          await deleteSampleInputData(editCurrentContent.inputDataId);
+        }
+        inputDataUpdate = { input_data_id: null };
+
+        // 삭제 후 새 파일 업로드
+        if (editForm.inputDataFile && editForm.inputDataName.trim()) {
+          const content = await editForm.inputDataFile.text();
+          const inputResult = await createSampleInputData(editForm.inputDataName.trim(), content);
+          if (inputResult) inputDataUpdate = { input_data_id: inputResult.id };
+        }
+      } else if (editForm.inputDataFile && editForm.inputDataName.trim()) {
+        // 기존 유지하면서 교체 (새 레코드 생성)
+        const content = await editForm.inputDataFile.text();
+        const inputResult = await createSampleInputData(editForm.inputDataName.trim(), content);
+        if (inputResult) inputDataUpdate = { input_data_id: inputResult.id };
+      }
+
       await updateAutoflowSample(String(editingSample.id), {
         category: editForm.category || null,
         description: editForm.description.trim() || null,
         developer_email: editForm.developer_email.trim() || null,
-        ...(inputDataId ? { input_data_id: inputDataId } : {}),
+        ...inputDataUpdate,
       });
       setEditingSample(null);
       onRefresh?.();
@@ -256,11 +286,7 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
         modules,
         connections,
       });
-      if (!modelResult) {
-        setRegisterError("모델 등록에 실패했습니다.");
-        setRegistering(false);
-        return;
-      }
+      if (!modelResult) throw new Error("모델 등록에 실패했습니다.");
       let inputDataId: string | null = null;
       if (registerForm.inputDataFile && registerForm.inputDataName.trim()) {
         const content = await registerForm.inputDataFile.text();
@@ -643,37 +669,69 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">모델 파일</p>
-                      <p className="text-sm font-medium text-gray-800 dark:text-white mt-0.5">
-                        {editCurrentContent?.modelName || editingSample.filename || "—"}
-                        <span className="ml-2 text-xs text-gray-400 font-normal">.json</span>
-                      </p>
-                      {editCurrentContent?.modelJson && (
-                        <p className="text-xs text-gray-400 mt-0.5">
-                          {(() => {
-                            try {
-                              const parsed = JSON.parse(editCurrentContent.modelJson);
-                              return `모듈 ${(parsed.modules || []).length}개 · 연결 ${(parsed.connections || []).length}개`;
-                            } catch { return ""; }
-                          })()}
-                        </p>
+                      {editForm.deleteModelFile ? (
+                        <p className="text-sm text-red-500 dark:text-red-400 mt-0.5 italic">삭제 예정 — 새 파일을 선택하세요</p>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-gray-800 dark:text-white mt-0.5">
+                            {editCurrentContent?.modelName || editingSample.filename || "—"}
+                            <span className="ml-2 text-xs text-gray-400 font-normal">.json</span>
+                          </p>
+                          {editCurrentContent?.modelJson && (
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {(() => {
+                                try {
+                                  const parsed = JSON.parse(editCurrentContent.modelJson);
+                                  return `모듈 ${(parsed.modules || []).length}개 · 연결 ${(parsed.connections || []).length}개`;
+                                } catch { return ""; }
+                              })()}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
-                    {editCurrentContent?.modelJson && (
-                      <button
-                        type="button"
-                        onClick={handleDownloadModelJson}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 rounded-md hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        다운로드
-                      </button>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {editCurrentContent?.modelJson && !editForm.deleteModelFile && (
+                        <button
+                          type="button"
+                          onClick={handleDownloadModelJson}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/30 rounded-md hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          다운로드
+                        </button>
+                      )}
+                      {editCurrentContent?.modelJson && !editForm.deleteModelFile && (
+                        <button
+                          type="button"
+                          onClick={() => setEditForm((f) => ({ ...f, deleteModelFile: true, modelFile: null }))}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-md hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+                          title="모델 파일 삭제 후 새 파일 업로드"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          삭제
+                        </button>
+                      )}
+                      {editForm.deleteModelFile && (
+                        <button
+                          type="button"
+                          onClick={() => setEditForm((f) => ({ ...f, deleteModelFile: false, modelFile: null }))}
+                          className="px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                          취소
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  {/* 모델 파일 교체 */}
+                  {/* 모델 파일 교체 / 재업로드 */}
                   <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
-                    <p className="text-xs text-gray-400 mb-1.5">교체할 파일 선택 (선택 안 하면 기존 유지)</p>
+                    <p className="text-xs text-gray-400 mb-1.5">
+                      {editForm.deleteModelFile ? "새 파일 선택 (필수)" : "교체할 파일 선택 (선택 안 하면 기존 유지)"}
+                    </p>
                     <input
                       type="file"
                       accept=".lifx,.json"
@@ -683,6 +741,9 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                     {editForm.modelFile && (
                       <p className="text-xs text-green-600 dark:text-green-400 mt-1">✓ 선택됨: {editForm.modelFile.name}</p>
                     )}
+                    {editForm.deleteModelFile && !editForm.modelFile && (
+                      <p className="text-xs text-amber-500 dark:text-amber-400 mt-1">새 모델 파일을 선택해 주세요.</p>
+                    )}
                   </div>
                 </div>
 
@@ -691,7 +752,9 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">입력 데이터 파일</p>
-                      {editCurrentContent?.inputDataName ? (
+                      {editForm.deleteInputData ? (
+                        <p className="text-sm text-red-500 dark:text-red-400 mt-0.5 italic">삭제 예정 — 새 파일을 선택하거나 저장하세요</p>
+                      ) : editCurrentContent?.inputDataName ? (
                         <>
                           <p className="text-sm font-medium text-gray-800 dark:text-white mt-0.5">
                             {editCurrentContent.inputDataName}
@@ -706,21 +769,45 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                         <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5 italic">첨부된 파일 없음</p>
                       )}
                     </div>
-                    {editCurrentContent?.inputDataContent && (
-                      <button
-                        type="button"
-                        onClick={handleDownloadInputData}
-                        className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        다운로드
-                      </button>
-                    )}
+                    <div className="flex-shrink-0 flex items-center gap-1.5">
+                      {editCurrentContent?.inputDataContent && !editForm.deleteInputData && (
+                        <button
+                          type="button"
+                          onClick={handleDownloadInputData}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 rounded-md hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          다운로드
+                        </button>
+                      )}
+                      {editCurrentContent?.inputDataId && !editForm.deleteInputData && (
+                        <button
+                          type="button"
+                          onClick={() => setEditForm((f) => ({ ...f, deleteInputData: true, inputDataFile: null, inputDataName: "" }))}
+                          className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 rounded-md hover:bg-red-100 dark:hover:bg-red-900/50 transition-colors"
+                          title="입력 데이터 파일 삭제"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                          삭제
+                        </button>
+                      )}
+                      {editForm.deleteInputData && (
+                        <button
+                          type="button"
+                          onClick={() => setEditForm((f) => ({ ...f, deleteInputData: false, inputDataFile: null, inputDataName: "" }))}
+                          className="px-2.5 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                        >
+                          취소
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {/* 입력 데이터 미리보기 */}
-                  {editCurrentContent?.inputDataContent && (
+                  {editCurrentContent?.inputDataContent && !editForm.deleteInputData && (
                     <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
                       <p className="text-xs text-gray-400 mb-1">내용 미리보기 (처음 5행)</p>
                       <pre className="text-[10px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-gray-900 rounded p-2 overflow-x-auto whitespace-pre max-h-20 overflow-y-auto font-mono">
@@ -728,9 +815,11 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                       </pre>
                     </div>
                   )}
-                  {/* 입력 데이터 교체 */}
+                  {/* 입력 데이터 교체 / 새 업로드 */}
                   <div className="pt-1 border-t border-gray-100 dark:border-gray-700">
-                    <p className="text-xs text-gray-400 mb-1.5">교체할 파일 선택 (선택 안 하면 기존 유지)</p>
+                    <p className="text-xs text-gray-400 mb-1.5">
+                      {editForm.deleteInputData ? "새 파일 선택 (선택 안 하면 삭제만 진행)" : "교체할 파일 선택 (선택 안 하면 기존 유지)"}
+                    </p>
                     <input
                       type="text"
                       value={editForm.inputDataName}

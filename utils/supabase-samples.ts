@@ -55,6 +55,7 @@ export interface AutoflowSampleWithContent {
   category: string | null;
   developer_email: string | null;
   model_name: string;
+  input_data_id: string | null;
   input_data_name: string | null;
   description: string | null;
   file_content: { modules: unknown[]; connections: unknown[] };
@@ -85,7 +86,7 @@ export async function fetchAutoflowSamplesList(): Promise<AutoflowSampleListItem
     .order("created_at", { ascending: false });
 
   if (error) {
-    console.error("[Supabase] fetchAutoflowSamplesList error:", error);
+    console.error("[Supabase] fetchAutoflowSamplesList error:", error.code, error.message, error.details);
     return [];
   }
 
@@ -145,6 +146,7 @@ export async function fetchAutoflowSampleById(
     category: sample.category,
     developer_email: sample.developer_email,
     model_name: model?.name ?? "",
+    input_data_id: (sample as any).input_data_id ?? null,
     input_data_name: inputData?.name ?? null,
     description: sample.description,
     file_content: { modules, connections },
@@ -157,7 +159,10 @@ export async function createSampleModel(
   name: string,
   file_content: { modules: unknown[]; connections: unknown[] }
 ): Promise<{ id: string } | null> {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured()) {
+    console.error("[Supabase] createSampleModel: Supabase가 설정되지 않았습니다.");
+    return null;
+  }
 
   const { data, error } = await supabase
     .from("sample_models")
@@ -166,8 +171,8 @@ export async function createSampleModel(
     .single();
 
   if (error) {
-    console.error("[Supabase] createSampleModel error:", error);
-    return null;
+    console.error("[Supabase] createSampleModel error:", error.code, error.message, error.details);
+    throw new Error(`Supabase 오류 (${error.code}): ${error.message}`);
   }
   return data ? { id: data.id } : null;
 }
@@ -281,6 +286,22 @@ export async function updateSampleModelContent(
 
   if (error) {
     console.error("[Supabase] updateSampleModelContent error:", error);
+    return false;
+  }
+  return true;
+}
+
+/** 입력 데이터 레코드 삭제 (sample_input_data) */
+export async function deleteSampleInputData(inputDataId: string): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+
+  const { error } = await supabase
+    .from("sample_input_data")
+    .delete()
+    .eq("id", inputDataId);
+
+  if (error) {
+    console.error("[Supabase] deleteSampleInputData error:", error);
     return false;
   }
   return true;
