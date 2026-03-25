@@ -973,23 +973,23 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
         }
         break;
       case ModuleType.NxMxCalculator:
-        for (const row of (d.nxRows as any[])) {
+        for (const row of ((d.nxRows ?? []) as any[])) {
           if (!row.dxCol) continue;
           body.push(`Nx_${row.name} = cumsum_rev(${row.dxCol})`);
         }
-        for (const row of (d.mxRows as any[])) {
+        for (const row of ((d.mxRows ?? []) as any[])) {
           if (!row.cxCol) continue;
           const dp = row.deduct && row.deduct !== '0' ? `, deduct=${row.deduct}` : '';
           body.push(`Mx_${row.name} = cumsum_rev(${row.cxCol}${dp})`);
         }
         break;
       case ModuleType.PremiumComponent:
-        for (const row of (d.nnxRows as any[])) {
+        for (const row of ((d.nnxRows ?? []) as any[])) {
           if (!row.nxCol) continue;
           const name = row.nxCol.replace(/^Nx_?/i,'') || 'Mortality';
           body.push(`NNX_${name} = Diff(${row.nxCol}, m)`);
         }
-        for (const row of (d.bpvRows as any[])) {
+        for (const row of ((d.bpvRows ?? []) as any[])) {
           if (!row.mxCol) continue;
           const name = row.mxCol.replace(/^Mx_?/i,'') || 'Mortality';
           body.push(`BPV_${name} = Diff(${row.mxCol}, n) * ${row.amount}`);
@@ -1762,7 +1762,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                 formContent = (
                   <div className="space-y-1.5 text-xs">
                     <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>수식 추가 시 기존 위험률을 변환합니다. 비워두면 통과합니다.</p>
-                    {(d.rows as any[]).map((row: any, i: number) => (
+                    {((d.rows ?? []) as any[]).map((row: any, i: number) => (
                       <div key={i} className="flex items-center gap-1">
                         <input value={row.output} onChange={e => updRow('rows', i, { output: e.target.value })} placeholder="출력열명" className={`${inputCls} w-28 flex-none`} />
                         <span className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>=</span>
@@ -1828,7 +1828,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                 formContent = (
                   <div className="space-y-2 text-xs">
                     <p className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>각 행마다 dx_이름 / Cx_이름이 자동 생성됩니다.</p>
-                    {(d.rows as any[]).map((row: any, i: number) => (
+                    {((d.rows ?? []) as any[]).map((row: any, i: number) => (
                       <div key={i} className="flex items-center gap-1">
                         <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>lx열</span>
                         <Select value={row.lxCol}
@@ -1859,7 +1859,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                   <div className="space-y-3 text-xs">
                     <div>
                       <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>Nx 항목 — 보험료 납입연금현가</p>
-                      {(d.nxRows as any[]).map((row: any, i: number) => (
+                      {((d.nxRows ?? []) as any[]).map((row: any, i: number) => (
                         <div key={i} className="flex items-center gap-1 mb-1">
                           <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>Nx_</span>
                           <input value={row.name} onChange={e => updRow('nxRows', i, { name: e.target.value })} placeholder="이름" className={`${inputCls} w-20 flex-none`} />
@@ -1882,7 +1882,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                     </div>
                     <div>
                       <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-orange-300' : 'text-orange-600'}`}>Mx 항목 — 사망급부현가</p>
-                      {(d.mxRows as any[]).map((row: any, i: number) => (
+                      {((d.mxRows ?? []) as any[]).map((row: any, i: number) => (
                         <div key={i} className="flex items-center gap-1 mb-1">
                           <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>Mx_</span>
                           <input value={row.name} onChange={e => updRow('mxRows', i, { name: e.target.value })} placeholder="이름" className={`${inputCls} w-20 flex-none`} />
@@ -1913,7 +1913,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                   <div className="space-y-3 text-xs">
                     <div>
                       <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-blue-300' : 'text-blue-600'}`}>NNX 항목 — 납입연금현가 (Year/Half/Quarter/Month 자동 생성)</p>
-                      {(d.nnxRows as any[]).map((row: any, i: number) => (
+                      {((d.nnxRows ?? []) as any[]).map((row: any, i: number) => (
                         <div key={i} className="flex items-center gap-1 mb-1">
                           <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>NNX_* = Diff(</span>
                           <Select value={row.nxCol}
@@ -1927,7 +1927,7 @@ export const PipelineDSLModal: React.FC<PipelineDSLModalProps> = ({
                     </div>
                     <div>
                       <p className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-orange-300' : 'text-orange-600'}`}>BPV 항목 — 급부현가</p>
-                      {(d.bpvRows as any[]).map((row: any, i: number) => (
+                      {((d.bpvRows ?? []) as any[]).map((row: any, i: number) => (
                         <div key={i} className="flex items-center gap-1 mb-1">
                           <span className={`text-[10px] flex-shrink-0 ${isDark ? 'text-gray-500':'text-gray-400'}`}>BPV_* = Diff(</span>
                           <Select value={row.mxCol}
