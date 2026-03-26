@@ -9,8 +9,9 @@
     "dev:with-server": "concurrently -n \"server,vite\" -c \"blue,yellow\" \"npm run server\" \"vite\"",
     "dev:server": "node server/split-data-server.js",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
     "server": "node server/split-data-server.js",
+    "start": "NODE_ENV=production node server/split-data-server.js",
     "check-sqlite3": "node scripts/check-sqlite3.js",
     "build-sqlite3": "node scripts/auto-build-sqlite3.js",
     "postinstall": "node scripts/auto-build-sqlite3.js || echo 'better-sqlite3 자동 빌드 실패. 수동 빌드: pnpm approve-builds better-sqlite3'"

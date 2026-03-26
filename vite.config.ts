@@ -12,9 +12,14 @@ export default defineConfig(({ mode }) => {
         port: 3005,
         host: '0.0.0.0',
         hmr: true,
+        allowedHosts: 'all',
         headers: {
           'Cache-Control': 'no-store',
         },
+      },
+      preview: {
+        host: '0.0.0.0',
+        allowedHosts: 'all',
       },
       plugins: [react()],
       define: {

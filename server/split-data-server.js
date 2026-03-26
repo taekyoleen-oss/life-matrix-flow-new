@@ -71,7 +71,8 @@ function checkAndBuildSqlite3() {
 checkAndBuildSqlite3();
 
 const app = express();
-const PORT = process.env.SERVER_PORT || 3002;
+const PORT = process.env.PORT || process.env.SERVER_PORT || 3002;
+const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -80,13 +81,24 @@ app.use(express.json({ limit: '50mb' }));
 import samplesRouter from './routes/samples.js';
 app.use('/api/samples', samplesRouter);
 
+// 프로덕션: 빌드된 프론트엔드 정적 파일 서빙
+if (isProduction) {
+  const distPath = path.join(projectRoot, 'dist');
+  app.use(express.static(distPath));
+  // SPA 폴백: API가 아닌 모든 요청은 index.html 반환
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // ============================================================================
 // 서버 시작
 // ============================================================================
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
     console.log(`- Samples API: http://localhost:${PORT}/api/samples`);
+    if (isProduction) console.log(`- 프론트엔드: http://localhost:${PORT}`);
     console.log(`\n⚠️  참고: better-sqlite3가 빌드되지 않은 경우 DB 기능이 비활성화됩니다.`);
     console.log(`   Samples는 samples.json 파일에서만 로드됩니다.`);
 });
