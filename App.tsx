@@ -52,13 +52,6 @@ import {
 import useHistoryState from "./hooks/useHistoryState";
 import { useTheme } from "./contexts/ThemeContext";
 import { DataPreviewModal } from "./components/DataPreviewModal";
-import { StatisticsPreviewModal } from "./components/StatisticsPreviewModal";
-import { SplitDataPreviewModal } from "./components/SplitDataPreviewModal";
-import { TrainedModelPreviewModal } from "./components/TrainedModelPreviewModal";
-import { StatsModelsResultPreviewModal } from "./components/StatsModelsResultPreviewModal";
-import { EvaluationPreviewModal } from "./components/EvaluationPreviewModal";
-import { XoLPricePreviewModal } from "./components/XoLPricePreviewModal";
-import { FinalXolPricePreviewModal } from "./components/FinalXolPricePreviewModal";
 import { ParameterInputModal } from "./components/ParameterInputModal";
 import { SAMPLE_DATA } from "./sampleData";
 import { CodeTerminalPanel } from "./components/CodeTerminalPanel";
@@ -2239,10 +2232,6 @@ const App: React.FC = () => {
 
     switch (outputData.type) {
       case "DataPreview":
-      case "KMeansOutput":
-      case "HierarchicalClusteringOutput":
-      case "DBSCANOutput":
-      case "PCAOutput":
       case "ScenarioRunnerOutput":
       case "PremiumComponentOutput":
         return (
@@ -2252,58 +2241,6 @@ const App: React.FC = () => {
             onClose={handleCloseModal}
             allModules={modules}
             allConnections={connections}
-          />
-        );
-      case "StatisticsOutput":
-        return (
-          <StatisticsPreviewModal
-            module={currentViewingModule}
-            projectName={productName}
-            onClose={handleCloseModal}
-          />
-        );
-      case "SplitDataOutput":
-        return (
-          <SplitDataPreviewModal
-            module={currentViewingModule}
-            onClose={handleCloseModal}
-          />
-        );
-      case "TrainedModelOutput":
-        return (
-          <TrainedModelPreviewModal
-            module={currentViewingModule}
-            projectName={productName}
-            onClose={handleCloseModal}
-          />
-        );
-      case "StatsModelsResultOutput":
-        return (
-          <StatsModelsResultPreviewModal
-            module={currentViewingModule}
-            projectName={productName}
-            onClose={handleCloseModal}
-          />
-        );
-      case "EvaluationOutput":
-        return (
-          <EvaluationPreviewModal
-            module={currentViewingModule}
-            onClose={handleCloseModal}
-          />
-        );
-      case "XoLPriceOutput":
-        return (
-          <XoLPricePreviewModal
-            module={currentViewingModule}
-            onClose={handleCloseModal}
-          />
-        );
-      case "FinalXolPriceOutput":
-        return (
-          <FinalXolPricePreviewModal
-            module={currentViewingModule}
-            onClose={handleCloseModal}
           />
         );
       case "NetPremiumOutput":

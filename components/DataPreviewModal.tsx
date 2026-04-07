@@ -326,16 +326,6 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
       module.outputData.type === "ScenarioRunnerOutput"
     )
       return module.outputData;
-    if (
-      module.outputData.type === "KMeansOutput" ||
-      module.outputData.type === "HierarchicalClusteringOutput" ||
-      module.outputData.type === "DBSCANOutput"
-    ) {
-      return module.outputData.clusterAssignments;
-    }
-    if (module.outputData.type === "PCAOutput") {
-      return module.outputData.transformedData;
-    }
     return null;
   };
 
