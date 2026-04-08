@@ -6,9 +6,10 @@ interface AIPlanDisplayModalProps {
     isOpen: boolean;
     onClose: () => void;
     plan: string;
+    onApply?: () => void;
 }
 
-export const AIPlanDisplayModal: React.FC<AIPlanDisplayModalProps> = ({ isOpen, onClose, plan }) => {
+export const AIPlanDisplayModal: React.FC<AIPlanDisplayModalProps> = ({ isOpen, onClose, plan, onApply }) => {
     if (!isOpen) return null;
 
     return (
@@ -32,13 +33,21 @@ export const AIPlanDisplayModal: React.FC<AIPlanDisplayModalProps> = ({ isOpen, 
                 <main className="p-6 overflow-y-auto">
                     <MarkdownRenderer text={plan} />
                 </main>
-                <footer className="flex justify-end p-4 bg-gray-50 border-t rounded-b-lg">
+                <footer className="flex justify-end gap-2 p-4 bg-gray-50 border-t rounded-b-lg">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-sm font-semibold text-white bg-gray-600 hover:bg-gray-700 rounded-md"
+                        className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-200 hover:bg-gray-300 rounded-md"
                     >
-                        Close
+                        닫기
                     </button>
+                    {onApply && (
+                        <button
+                            onClick={onApply}
+                            className="px-4 py-2 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-md"
+                        >
+                            이 파이프라인 적용하기
+                        </button>
+                    )}
                 </footer>
             </div>
         </div>

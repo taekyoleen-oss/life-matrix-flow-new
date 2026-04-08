@@ -81,6 +81,77 @@ import { SlideReportButton } from "./components/SlideReportButton";
 import { loadModuleDefault } from "./utils/moduleDefaults";
 import { buildPipelineFromModel } from "./utils/pipelineBuilder";
 import { generateDSL } from "./utils/dslParser";
+import { GoogleGenAI } from "@google/genai";
+import { AIPipelineFromGoalModal } from "./components/AIPipelineFromGoalModal";
+import { AIPlanDisplayModal } from "./components/AIPlanDisplayModal";
+import { parseMarkdownModel } from "./utils/markdownModelParser";
+
+function buildPipelineGenerationPrompt(goal: string): string {
+  return `당신은 보험료 산출 파이프라인 설계 전문가입니다.
+사용자의 목표에 맞는 보험료 산출 파이프라인을 아래 DSL 마크다운 형식으로 생성하세요.
+
+[사용 가능한 모듈]
+- LoadData: 위험률 CSV 파일 로드
+- SelectRiskRates: 나이/성별 기준 위험률 선택
+- SelectData: 위험률 컬럼 선택
+- RateModifier: 요율 보정
+- DefinePolicyInfo: 증권 기본 정보 (가입연령, 성별, 보험기간, 납입기간, 이율)
+- CalculateSurvivors: 생존자 수(Lx) 계산
+- ClaimsCalculator: 클레임 계산
+- NxMxCalculator: Nx/Mx 통신 계산
+- PremiumComponent: NNX/BPV 계산
+- AdditionalName: 추가 변수 정의
+- NetPremiumCalculator: 순보험료 계산 (수식 포함)
+- GrossPremiumCalculator: 영업보험료 계산 (수식 포함)
+- ReserveCalculator: 준비금 계산
+
+[DSL 형식 예시]
+**상품명**: 종신보험
+**설명**: 30세 남성 기준 순보험료 산출
+
+## [1] 증권 기본 정보 (DefinePolicyInfo)
+**포함여부**: yes
+**가입연령**: 30
+**성별**: M
+**보험기간**: life
+**납입기간**: 20
+**이율 (%)**: 2.5
+
+## [2] 위험률 데이터 로드 (LoadData)
+**포함여부**: yes
+
+## [3] 나이/성별 기준 위험률 선택 (SelectRiskRates)
+**포함여부**: yes
+
+## [4] 위험률 컬럼 선택 (SelectData)
+**포함여부**: yes
+
+## [5] 생존자 수 계산 (CalculateSurvivors)
+**포함여부**: yes
+
+## [6] 클레임 계산 (ClaimsCalculator)
+**포함여부**: yes
+
+## [7] Nx/Mx 계산 (NxMxCalculator)
+**포함여부**: yes
+
+## [8] NNX/BPV 계산 (PremiumComponent)
+**포함여부**: yes
+
+## [9] 순보험료 계산 (NetPremiumCalculator)
+**포함여부**: yes
+**수식**: [BPV_Mortality] / [NNX_Mortality(Year)]
+**변수명**: PP
+
+## [10] 영업보험료 계산 (GrossPremiumCalculator)
+**포함여부**: yes
+**수식**: [PP] / (1 - 0.05)
+**변수명**: GP
+
+사용자 목표: ${goal}
+
+위 형식에 맞는 DSL 마크다운을 생성하세요. 코드블록 없이 마크다운만 출력하세요.`;
+}
 
 const getModuleDefault = (type: ModuleType) => {
   const defaultData = DEFAULT_MODULES.find((m) => m.type === type)!;
@@ -759,6 +830,10 @@ const App: React.FC = () => {
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [isPipelineExecutionModalOpen, setIsPipelineExecutionModalOpen] =
     useState(false);
+  const [isAIGoalModalOpen, setIsAIGoalModalOpen] = useState(false);
+  const [aiGeneratedPlan, setAiGeneratedPlan] = useState<string>('');
+  const [isAIPlanModalOpen, setIsAIPlanModalOpen] = useState(false);
+  const [isGeneratingPipeline, setIsGeneratingPipeline] = useState(false);
 
   const setConnections = useCallback(
     (value: React.SetStateAction<Connection[]>) => {
@@ -1732,6 +1807,34 @@ const App: React.FC = () => {
     };
     input.click();
   }, []);
+
+  const handleGeneratePipelineFromGoal = async (goal: string) => {
+    setIsAIGoalModalOpen(false);
+    setIsGeneratingPipeline(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+      const prompt = buildPipelineGenerationPrompt(goal);
+      const response = await ai.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt,
+      });
+      const dslMarkdown = response.text ?? '';
+      setAiGeneratedPlan(dslMarkdown);
+      setIsAIPlanModalOpen(true);
+    } catch (err) {
+      console.error('AI pipeline generation failed:', err);
+      alert('파이프라인 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsGeneratingPipeline(false);
+    }
+  };
+
+  const handleApplyAIPlan = () => {
+    const model = parseMarkdownModel(aiGeneratedPlan);
+    const { modules: newModules, connections: newConnections } = buildPipelineFromModel(model);
+    handleBuildPipelineFromDSL(newModules, newConnections, model.productName);
+    setIsAIPlanModalOpen(false);
+  };
 
   const handleBuildPipelineFromDSL = useCallback(
     (newModules: CanvasModule[], newConnections: Connection[], name: string) => {
@@ -5555,6 +5658,16 @@ const App: React.FC = () => {
             <PlayIcon className="h-4 w-4" />
             <span>Run All</span>
           </button>
+          <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
+          <button
+            onClick={() => setIsAIGoalModalOpen(true)}
+            disabled={isGeneratingPipeline}
+            title="AI로 파이프라인 생성"
+            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+          >
+            <SparklesIcon className="w-4 h-4" />
+            <span>{isGeneratingPipeline ? 'AI 생성 중...' : 'AI 생성'}</span>
+          </button>
         </div>
 
         {/* 세 번째 줄: 햄버거(사이드바), Samples, My Work(왼쪽) | Code/Terminal(오른쪽) */}
@@ -6340,6 +6453,21 @@ const App: React.FC = () => {
           onPatchParameters={handlePatchParametersFromDSL}
         />
       )}
+
+      {/* AI Pipeline From Goal Modal */}
+      <AIPipelineFromGoalModal
+        isOpen={isAIGoalModalOpen}
+        onClose={() => setIsAIGoalModalOpen(false)}
+        onSubmit={handleGeneratePipelineFromGoal}
+      />
+
+      {/* AI Plan Display Modal */}
+      <AIPlanDisplayModal
+        isOpen={isAIPlanModalOpen}
+        onClose={() => setIsAIPlanModalOpen(false)}
+        plan={aiGeneratedPlan}
+        onApply={handleApplyAIPlan}
+      />
     </div>
   );
 };
