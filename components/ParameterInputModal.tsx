@@ -2884,6 +2884,9 @@ const CalculateSurvivorsParams: React.FC<{
       id: newCalcId,
       name: "",
       decrementRates: [],
+      // D-1 확정: 새 항목의 기본 다중탈퇴 결합식 = 독립곱(계리적 정확값).
+      // 기존 저장 데이터(필드 없음)는 엔진 fallback 'udd'로 결과 불변(하위호환).
+      decrementMethod: "independent",
     };
     updateCalculations([...(calculations || []), newCalc]);
   };

@@ -3205,7 +3205,8 @@ const App: React.FC = () => {
                   // 다중탈퇴 결합식 선택 (D-1):
                   //  - 'independent' (독립곱): 1 - ∏(1 - qi) = qm + q_others - qm*q_others
                   //  - 'udd' (기본/미지정): UDD 1/2 보정 = qm + q_others - qm*q_others/2  (기존 동작)
-                  // 기본값을 'udd'로 두어, decrementMethod 미지정 시 기존 산출 결과가 불변임을 보장한다.
+                  // D-1 확정: 새 항목 기본값은 독립곱(UI에서 'independent' 명시). 엔진 fallback은 'udd'로
+                  // 유지하여, decrementMethod 필드가 없는 레거시 데이터의 산출 결과가 불변임을 보장한다.
                   const decrementMethod = calc.decrementMethod ?? "udd";
                   const totalDecrementFactor =
                     decrementMethod === "independent"
