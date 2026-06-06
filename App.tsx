@@ -166,7 +166,8 @@ const getModuleDefault = (type: ModuleType) => {
   
   return {
     type,
-    name: moduleInfo.name,
+    // 표시명은 한글 우선(+영문 약어 병기). DSL/내부 식별은 module.type 기준이라 안전.
+    name: (moduleInfo as any).nameKo || moduleInfo.name,
     status: ModuleStatus.Pending,
     parameters, // Deep copy
     inputs: JSON.parse(JSON.stringify(defaultData.inputs)), // Deep copy
@@ -764,6 +765,26 @@ const App: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [saveButtonText, setSaveButtonText] = useState("저장");
   const [initialSavedToast, setInitialSavedToast] = useState<string | null>(null);
+
+  // 온보딩 가이드: 첫 방문(또는 닫기 전)에 4단계 산출 순서를 안내. localStorage로 재표시 억제.
+  const ONBOARDING_KEY = "lifeMatrixFlow_onboardingDismissed";
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const dismissOnboarding = useCallback((remember: boolean) => {
+    setShowOnboarding(false);
+    if (remember) {
+      try {
+        localStorage.setItem(ONBOARDING_KEY, "1");
+      } catch {
+        /* localStorage 불가 환경 무시 */
+      }
+    }
+  }, []);
 
   // 범용 토스트(실행 결과·연결 거부 등 비차단 알림). 기존 alert 흐름 단절을 대체.
   const [toast, setToast] = useState<
@@ -1565,7 +1586,9 @@ const App: React.FC = () => {
               throw new Error(`Module type "${m.type}" not found`);
             }
             const moduleInfo = TOOLBOX_MODULES.find((tm) => tm.type === m.type);
-            const defaultName = moduleInfo ? moduleInfo.name : m.type;
+            const defaultName = moduleInfo
+              ? (moduleInfo as any).nameKo || moduleInfo.name
+              : m.type;
             return {
               ...defaultModule,
               id: moduleId,
@@ -2047,7 +2070,9 @@ const App: React.FC = () => {
         : JSON.parse(JSON.stringify(defaultData.parameters));
 
       const moduleInfo = TOOLBOX_MODULES.find((m) => m.type === type);
-      const baseName = moduleInfo ? moduleInfo.name : type;
+      const baseName = moduleInfo
+        ? (moduleInfo as any).nameKo || moduleInfo.name
+        : type;
       const count = modules.filter((m) => m.type === type).length + 1;
 
       // Check if this is a special module that needs a container box
@@ -3983,7 +4008,11 @@ const App: React.FC = () => {
                 // 보험료 산출에 쓰이는 scalar BPV( (Mx[0]-Mx[종단]) × amount, 구간차 )와는 정의가 다르다.
                 // 두 값을 직접 비교하지 말 것.
                 description:
-                  "행별 Σ(Mx[행]×보험금) 누적값. 보험료에 쓰이는 BPV(scalar, (Mx[0]-Mx[종단])×보험금, 구간차)와 정의가 다름 — 직접 비교 금지.",
+                  "보험금 현가(행별 참고용)\n" +
+                  "공식: BPV_Col[행] = Σ(Mx[행] × 보험금)\n" +
+                  "⚠ 보험료에 쓰이는 BPV(scalar)와 다릅니다.\n" +
+                  "scalar BPV = (Mx[0] − Mx[종단]) × 보험금 (구간차)\n" +
+                  "이 열은 각 행 누적값이라 scalar BPV와 직접 비교하지 마세요.",
               });
             }
 
@@ -5673,7 +5702,7 @@ const App: React.FC = () => {
   const categorizedModules = [
     { name: "도형메뉴", types: [ModuleType.TextBox, ModuleType.GroupBox] },
     {
-      name: "Data",
+      name: "데이터",
       types: [
         ModuleType.DefinePolicyInfo,
         ModuleType.LoadData,
@@ -5683,7 +5712,7 @@ const App: React.FC = () => {
       ],
     },
     {
-      name: "Actuarial",
+      name: "계리계산",
       types: [
         ModuleType.CalculateSurvivors,
         ModuleType.ClaimsCalculator,
@@ -5696,7 +5725,7 @@ const App: React.FC = () => {
       ],
     },
     {
-      name: "Automation",
+      name: "자동화",
       types: [ModuleType.ScenarioRunner, ModuleType.PipelineExplainer],
     },
   ];
@@ -5715,8 +5744,118 @@ const App: React.FC = () => {
     return modules.find((m) => m.id === lastId) || null;
   }, [selectedModuleIds, modules]);
 
+  // 온보딩 체크리스트 진행도(현재 상태 반영). 엔진 무관, 순수 표시용.
+  const onboardingProgress = (() => {
+    const hasData = modules.some(
+      (m) => m.type === ModuleType.LoadData && m.status === ModuleStatus.Success
+    );
+    const hasConnections = connections.length > 0;
+    const hasParams = modules.some(
+      (m) =>
+        m.type === ModuleType.NetPremiumCalculator &&
+        !!(m.parameters?.formula && String(m.parameters.formula).trim())
+    );
+    const hasRun = modules.some((m) => m.status === ModuleStatus.Success);
+    return { hasData, hasConnections, hasParams, hasRun };
+  })();
+
   return (
     <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white h-screen w-full flex flex-col overflow-hidden transition-colors duration-200">
+      {/* 온보딩 가이드(첫 방문) — 4단계 산출 순서 체크리스트 */}
+      {showOnboarding && (
+        <div
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
+          onClick={() => dismissOnboarding(false)}
+        >
+          <div
+            className="w-[92vw] max-w-md rounded-2xl shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="시작 가이드"
+          >
+            <div className="flex items-start justify-between mb-1">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <SparklesIcon className="h-5 w-5 text-blue-500" />
+                보험료 산출 시작하기
+              </h2>
+              <button
+                onClick={() => dismissOnboarding(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors"
+                aria-label="닫기"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              아래 순서대로 진행하면 순보험료·영업보험료·준비금을 산출할 수 있습니다.
+            </p>
+            <ol className="space-y-3">
+              {[
+                {
+                  done: onboardingProgress.hasData,
+                  title: "1) 위험률 데이터 로드",
+                  desc: "왼쪽 [데이터] 메뉴의 “위험률 데이터 로드”로 사망률 등 위험률표(CSV)를 불러옵니다.",
+                },
+                {
+                  done: onboardingProgress.hasConnections,
+                  title: "2) 모듈 연결",
+                  desc: "노드의 오른쪽 출력 포트를 다음 노드의 왼쪽 입력 포트로 드래그해 연결합니다.",
+                },
+                {
+                  done: onboardingProgress.hasParams,
+                  title: "3) 파라미터 입력",
+                  desc: "노드의 왼쪽(입력·편집) 영역을 클릭해 가입정보·수식 등 값을 입력합니다.",
+                },
+                {
+                  done: onboardingProgress.hasRun,
+                  title: "4) 실행 및 결과 확인",
+                  desc: "상단 [전체 실행]으로 파이프라인을 돌리고, 노드 오른쪽(출력·결과)을 클릭해 결과를 봅니다.",
+                },
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                      step.done
+                        ? "bg-emerald-500 text-white"
+                        : "bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-300"
+                    }`}
+                  >
+                    {step.done ? "✓" : i + 1}
+                  </span>
+                  <div>
+                    <p
+                      className={`text-sm font-semibold ${
+                        step.done
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-gray-900 dark:text-gray-100"
+                      }`}
+                    >
+                      {step.title}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-snug">
+                      {step.desc}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button
+                onClick={() => dismissOnboarding(true)}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                다시 보지 않기
+              </button>
+              <button
+                onClick={() => dismissOnboarding(false)}
+                className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              >
+                시작하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 초기 화면 저장 토스트 */}
       {initialSavedToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white bg-gray-900 dark:bg-gray-100 dark:text-gray-900 border border-gray-700 dark:border-gray-300 flex items-center gap-2 animate-fade-in">
@@ -5804,6 +5943,13 @@ const App: React.FC = () => {
 
         {/* 두 번째 줄: 테마, Undo/Redo, Set Folder, Load, Save, Run All */}
         <div className="flex items-center justify-end gap-2 w-full overflow-x-auto scrollbar-hide mt-1">
+          <button
+            onClick={() => setShowOnboarding(true)}
+            className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
+            title="시작 가이드 (산출 4단계 안내)"
+          >
+            <SparklesIcon className="h-5 w-5 text-blue-500" />
+          </button>
           <button
             onClick={toggleTheme}
             className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
@@ -6139,11 +6285,15 @@ const App: React.FC = () => {
               <button
                 onClick={() => setIsPipelineExecutionModalOpen(true)}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-md font-semibold text-white transition-colors w-full justify-center mb-1"
-                title="Pipeline Execution"
+                title="파이프라인 실행 (Pipeline Execution)"
               >
                 <QueueListIcon className="h-4 w-4" />
-                Pipeline Execution
+                파이프라인 실행
               </button>
+              {/* 모듈 추가 방법 안내 */}
+              <p className="text-[10px] leading-snug text-gray-500 dark:text-gray-400 px-1 pb-1 mb-1 border-b border-gray-200 dark:border-gray-700">
+                아래 모듈을 클릭하거나 캔버스로 끌어다 놓으면 추가됩니다.
+              </p>
               {categorizedModules.map((category, index) => {
                 const isCollapsed = collapsedCategories.has(category.name);
                 const isShapeMenu = category.name === "도형메뉴";
@@ -6290,13 +6440,13 @@ const App: React.FC = () => {
                                         handleDragStart(e, moduleInfo.type)
                                       }
                                       className="p-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
-                                      title={moduleInfo.name}
+                                      title={(moduleInfo as any).nameKo || moduleInfo.name}
                                     >
                                       <moduleInfo.icon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
                                     </button>
                                     {/* Tooltip */}
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                                      {moduleInfo.name}
+                                      {(moduleInfo as any).nameKo || moduleInfo.name}
                                     </div>
                                   </div>
                                 );
@@ -6339,10 +6489,10 @@ const App: React.FC = () => {
                                   handleDragStart(e, moduleInfo.type)
                                 }
                                 className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200 rounded-md font-semibold transition-colors whitespace-nowrap w-full text-left"
-                                title={moduleInfo.description}
+                                title={`${(moduleInfo as any).nameKo || moduleInfo.name}\n${(moduleInfo as any).descriptionKo || moduleInfo.description}`}
                               >
                                 <moduleInfo.icon className="h-4 w-4 flex-shrink-0" />
-                                {moduleInfo.name}
+                                {(moduleInfo as any).nameKo || moduleInfo.name}
                               </button>
                             );
                           })

@@ -455,7 +455,7 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                         ? (theme === 'light' ? 'text-green-600 hover:bg-green-100 hover:text-green-700' : 'text-green-500 hover:bg-green-900/30 hover:text-green-400')
                         : (theme === 'light' ? 'text-blue-600 hover:bg-blue-100 hover:text-blue-700' : 'text-blue-500 hover:bg-blue-900/30 hover:text-blue-400')
                 }`}
-                title={isRunnable ? (module.status === ModuleStatus.Success ? "Module executed successfully" : "Run Module") : "Upstream modules must run successfully first"}
+                title={isRunnable ? (module.status === ModuleStatus.Success ? "실행 완료 — 다시 실행하려면 클릭" : "이 모듈 실행") : "먼저 상류(왼쪽) 모듈이 성공해야 실행할 수 있습니다"}
              >
                 <PlayIcon className="w-8 h-8" />
              </button>
@@ -469,7 +469,7 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                <button
                  onClick={handleDelete}
                  className={`p-1 ${theme === 'light' ? 'text-gray-600 hover:text-red-500 hover:bg-red-100' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/30'} rounded-full transition-colors`}
-                 title="Delete Module"
+                 title="모듈 삭제"
                >
                  <XMarkIcon className="w-4 h-4" />
                </button>
@@ -488,11 +488,11 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
            >
                 {/* Tooltip for Description */}
                 <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-black text-xs text-gray-200 rounded shadow-lg z-50 pointer-events-none border border-gray-600">
-                    {moduleInfo?.description}
-                    <div className="text-[10px] text-gray-500 mt-1">Click to edit parameters</div>
+                    {(moduleInfo as any)?.descriptionKo || moduleInfo?.description}
+                    <div className="text-[10px] text-blue-300 mt-1 font-semibold">✎ 클릭하면 파라미터를 편집합니다</div>
                 </div>
 
-                <span className={`font-black ${theme === 'light' ? 'text-gray-600' : 'text-gray-500'} text-[8px] tracking-widest text-center mb-0.5`}>INPUT</span>
+                <span className={`font-black ${theme === 'light' ? 'text-gray-600' : 'text-gray-500'} text-[8px] tracking-widest text-center mb-0.5`}>입력·편집</span>
 
                 {/* Parameter Summary */}
                 <div className="flex-grow flex items-center justify-center">
@@ -533,10 +533,15 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
            >
                  {/* Tooltip for View Results (DefinePolicyInfo 제외) */}
                  {module.type !== ModuleType.DefinePolicyInfo && (
-                 <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block px-2 py-1 bg-black text-[10px] text-gray-200 rounded shadow-lg z-50 pointer-events-none border border-gray-600 whitespace-nowrap">
-                    Click to view Results
+                 <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block px-2 py-1 bg-black text-[10px] text-emerald-300 font-semibold rounded shadow-lg z-50 pointer-events-none border border-gray-600 whitespace-nowrap">
+                    ▶ 클릭하면 결과를 봅니다
                  </div>
                  )}
+
+                {/* 우측 영역 = 결과 보기 (좌측 편집과 구분) */}
+                {module.type !== ModuleType.DefinePolicyInfo && (
+                  <span className={`font-black ${theme === 'light' ? 'text-gray-600' : 'text-gray-500'} text-[8px] tracking-widest text-center mb-0.5`}>출력·결과</span>
+                )}
 
                 <ModuleOutputSummary module={module} />
 

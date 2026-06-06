@@ -3194,8 +3194,19 @@ const CalculateSurvivorsParams: React.FC<{
                     {/* 다중탈퇴 결합식 선택 (D-1): 2개 이상 위험률일 때만 노출 */}
                     {!isFixed && (calc.decrementRates || []).length >= 2 && (
                       <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-[11px] text-gray-400 flex-shrink-0">
+                        <span className="text-[11px] text-gray-400 flex-shrink-0 flex items-center gap-1">
                           다중탈퇴 결합식:
+                          <span
+                            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-600 text-gray-200 text-[9px] font-bold cursor-help"
+                            title={
+                              "여러 위험률(예: 사망+장해)을 하나의 탈퇴율로 결합하는 방식입니다.\n" +
+                              "• UDD 보정: qm+qo−qm·qo/2 — 1년 내 탈퇴가 균등(UDD)하다고 가정해 1/2 보정. 일반 다중탈퇴표에 권장.\n" +
+                              "• 독립곱: 1−∏(1−qi) — 각 위험이 독립이라고 보고 곱으로 결합.\n" +
+                              "위험률 특성과 산출 기준에 맞게 선택하세요."
+                            }
+                          >
+                            ?
+                          </span>
                         </span>
                         <select
                           value={calc.decrementMethod || "udd"}

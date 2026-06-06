@@ -148,6 +148,27 @@ export function dslSectionToParams(
   //    ⚠️ 부분-표현 타입은 DSL 이 실제로 표현하는 키만 남긴다 (설계 §3 테이블).
   const parameters = filterReverseKeys(type, config.parameters);
 
+  // ── 수식형 모듈(NetPremium/Gross: 'formula' 보유) 데이터 손실 방지 가드 (설계 §4.3, QA Round G-C):
+  //    사용자가 본문에 내용을 입력했는데(garbage 등) 수식이 비어버리면, 조용히 빈값으로
+  //    덮어쓰지 말고 적용을 거부한다. 본문이 실제로 비어있는 경우(의도적 비움)는 통과.
+  if ('formula' in parameters) {
+    const formulaEmpty = !String(parameters.formula ?? '').trim();
+    const meaningfulBody = sectionText
+      .split('\n')
+      .filter((l) => {
+        const t = l.trim();
+        return t && !t.startsWith('#') && !t.startsWith('//');
+      })
+      .join('')
+      .trim();
+    if (formulaEmpty && meaningfulBody.length > 0) {
+      return {
+        ok: false,
+        errors: ['수식을 해석할 수 없습니다. 변경이 적용되지 않았습니다 (기존 입력값 보존).'],
+      };
+    }
+  }
+
   return { ok: true, parameters, warnings };
 }
 
