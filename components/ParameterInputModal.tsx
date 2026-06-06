@@ -21,6 +21,8 @@ import { saveModuleDefault, loadModuleDefault } from "../utils/moduleDefaults";
 import { SAMPLE_DATA } from "../sampleData";
 import { ExcelInputModal } from "./ExcelInputModal";
 import { generateDSL, extractModuleSection } from "../utils/dslParser";
+import { inferUpstreamColumns } from "../utils/schemaInference";
+import { useTheme } from "../contexts/ThemeContext";
 
 // Dynamic import for xlsx to handle module resolution issues
 let XLSX: any = null;
@@ -61,10 +63,13 @@ export const PropertyInput: React.FC<{
   disabled = false,
   placeholder,
   compact = false,
-}) => (
+}) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  return (
   <div>
     {label && (
-      <label className={`block text-xs text-gray-400 mb-1`}>{label}</label>
+      <label className={`block text-xs mb-1 ${isDark ? "text-gray-400" : "text-gray-600"}`}>{label}</label>
     )}
     <input
       type={type}
@@ -79,12 +84,17 @@ export const PropertyInput: React.FC<{
       }
       disabled={disabled}
       placeholder={placeholder}
-      className={`w-full bg-gray-700 border border-gray-600 rounded ${
+      className={`w-full border rounded ${
         compact ? "px-2 py-1 text-xs" : "px-2 py-1.5 text-xs"
-      } focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-800 disabled:text-gray-500`}
+      } focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        isDark
+          ? "bg-gray-700 border-gray-600 text-white disabled:bg-gray-800 disabled:text-gray-500"
+          : "bg-white border-gray-300 text-gray-900 disabled:bg-gray-100 disabled:text-gray-400"
+      }`}
     />
   </div>
-);
+  );
+};
 
 export const PropertySelect: React.FC<{
   label?: string;
@@ -93,17 +103,24 @@ export const PropertySelect: React.FC<{
   options: { label: string; value: string }[] | string[];
   placeholder?: string;
   compact?: boolean;
-}> = ({ label, value, onChange, options, placeholder, compact = false }) => (
+}> = ({ label, value, onChange, options, placeholder, compact = false }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
+  return (
   <div>
     {label && (
-      <label className={`block text-xs text-gray-400 mb-1`}>{label}</label>
+      <label className={`block text-xs mb-1 ${isDark ? "text-gray-400" : "text-gray-600"}`}>{label}</label>
     )}
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className={`w-full bg-gray-700 border border-gray-600 rounded ${
+      className={`w-full border rounded ${
         compact ? "px-2 py-1 text-xs" : "px-2 py-1.5 text-xs"
-      } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+      } focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        isDark
+          ? "bg-gray-700 border-gray-600 text-white"
+          : "bg-white border-gray-300 text-gray-900"
+      }`}
     >
       {placeholder && (
         <option value="" disabled>
@@ -121,7 +138,8 @@ export const PropertySelect: React.FC<{
       })}
     </select>
   </div>
-);
+  );
+};
 
 const ToggleSwitch: React.FC<{
   checked: boolean;
@@ -165,6 +183,36 @@ export const getConnectedDataSource = (
   if (sourceModule?.outputData?.type === "DataPreview")
     return sourceModule.outputData;
   return undefined;
+};
+
+/**
+ * 입력 컬럼 목록을 반환한다.
+ *  - 상류가 실행되어 실제 컬럼이 있으면 그것을 우선(`inferred: false`).
+ *  - 미실행이면 schemaInference 로 정적 추론한 "예상값"(`inferred: true`).
+ * 설계 §6.2: 드롭다운 소스 = outputData.columns ?? inferred.
+ */
+export const getConnectedColumnsWithInference = (
+  moduleId: string,
+  portName: string,
+  allModules: CanvasModule[],
+  allConnections: Connection[]
+): { columns: string[]; inferred: boolean } => {
+  const live = getConnectedDataSource(
+    moduleId,
+    portName,
+    allModules,
+    allConnections
+  );
+  if (live && live.columns.length > 0) {
+    return { columns: live.columns.map((c) => c.name), inferred: false };
+  }
+  // 미실행: 상류 체인을 정적 추론.
+  try {
+    const cols = inferUpstreamColumns(moduleId, allModules, allConnections);
+    return { columns: cols, inferred: cols.length > 0 };
+  } catch {
+    return { columns: [], inferred: false };
+  }
 };
 
 export const getGlobalPolicyInfoFromCanvas = (
@@ -600,6 +648,8 @@ const NetPremiumCalculatorParams: React.FC<{
   allConnections,
   moduleId,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const { formula, variableName } = parameters;
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const [activeFormula, setActiveFormula] = useState<"formula" | "result">(
@@ -669,24 +719,52 @@ const NetPremiumCalculatorParams: React.FC<{
     }
   };
 
+  // 토큰이 상류에서 실제로 제공되는 값인지 판정.
+  const isKnownToken = (key: string): boolean => {
+    if (premiumComponents?.nnxResults && Object.keys(premiumComponents.nnxResults).includes(key)) return true;
+    if (premiumComponents?.bpvResults && Object.keys(premiumComponents.bpvResults).includes(key)) return true;
+    if (key === "MMX" || key === "SUMX" || key === "BPV") return true;
+    if (key === "PP" || key === variableName) return true;
+    if (additionalVars && Object.keys(additionalVars).includes(key)) return true;
+    if (key === "m" || key === "n" || key === "PaymentTerm" || key === "PolicyTerm") return true;
+    if (availableColumns.includes(key)) return true;
+    return false;
+  };
+
   const renderPreview = () => {
     if (!formula) return null;
     const parts = formula.split(/(\[[^\]]+\])/g);
+    // 미해결(상류에서 제공되지 않는) 토큰 수집 → 하단에 사유 안내.
+    const unresolved: string[] = [];
+    parts.forEach((part) => {
+      if (part.startsWith("[") && part.endsWith("]")) {
+        const key = part.slice(1, -1);
+        if (!isKnownToken(key) && !unresolved.includes(key)) unresolved.push(key);
+      }
+    });
     return (
-      <div className="mt-2 p-2 bg-gray-800 rounded border border-gray-700 flex flex-wrap gap-1 items-center font-mono text-xs">
-        <span className="text-gray-500 text-[10px] w-full uppercase font-bold mb-1">
-          Live Preview
+      <div className={`mt-2 p-2 rounded border flex flex-wrap gap-1 items-center font-mono text-xs ${
+        isDark ? "bg-gray-800 border-gray-700" : "bg-gray-50 border-gray-200"
+      }`}>
+        <span className={`text-[10px] w-full uppercase font-bold mb-1 ${isDark ? "text-gray-500" : "text-gray-500"}`}>
+          실시간 미리보기 (Live Preview)
         </span>
         {parts.map((part, i) => {
           if (part.startsWith("[") && part.endsWith("]")) {
             const key = part.slice(1, -1);
             // Determine color based on variable type
-            let colorClass = "bg-gray-600 text-gray-300";
+            let colorClass = isDark ? "bg-gray-600 text-gray-300" : "bg-gray-200 text-gray-700";
+            let unknown = false;
             if (
               premiumComponents?.nnxResults &&
               Object.keys(premiumComponents.nnxResults).includes(key)
             ) {
               colorClass = "bg-blue-600 text-white";
+            } else if (
+              premiumComponents?.bpvResults &&
+              Object.keys(premiumComponents.bpvResults).includes(key)
+            ) {
+              colorClass = "bg-green-600 text-white";
             } else if (key === "MMX" || key === "SUMX" || key === "BPV") {
               colorClass = "bg-green-600 text-white";
             } else if (key === "PP" || key === variableName) {
@@ -696,27 +774,40 @@ const NetPremiumCalculatorParams: React.FC<{
               Object.keys(additionalVars).includes(key)
             ) {
               colorClass = "bg-amber-600 text-white";
-            } else if (key === "m" || key === "n") {
+            } else if (key === "m" || key === "n" || key === "PaymentTerm" || key === "PolicyTerm") {
               colorClass = "bg-purple-600 text-white";
             } else if (availableColumns.includes(key)) {
-              colorClass = "bg-gray-600 text-gray-200";
+              colorClass = isDark ? "bg-gray-600 text-gray-200" : "bg-gray-300 text-gray-800";
+            } else {
+              // 미해결 토큰: 빨강 + "?" 표시
+              colorClass = "bg-red-600 text-white ring-1 ring-red-300";
+              unknown = true;
             }
             return (
               <span
                 key={i}
                 className={`${colorClass} px-1.5 py-0.5 rounded text-xs shadow-sm`}
+                title={unknown ? "미해결 변수: 상류 모듈에서 출력되지 않습니다" : key}
               >
-                {part}
+                {part}{unknown ? " ?" : ""}
               </span>
             );
           }
           if (!part) return null;
           return (
-            <span key={i} className="text-gray-300">
+            <span key={i} className={isDark ? "text-gray-300" : "text-gray-700"}>
               {part}
             </span>
           );
         })}
+        {unresolved.length > 0 && (
+          <div className="w-full mt-2 text-[11px] text-red-500 font-sans font-semibold">
+            ⚠ 미해결 변수: {unresolved.map((k) => `[${k}]`).join(", ")}
+            <div className="font-normal text-red-400 mt-0.5">
+              상류 모듈에서 출력되지 않는 변수입니다. 왼쪽 변수 버튼에서 정확한 이름을 선택해 삽입하세요.
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -724,7 +815,7 @@ const NetPremiumCalculatorParams: React.FC<{
   if (!additionalVarsOutput) {
     return (
       <p className="text-sm text-gray-500">
-        Connect 'Additional Variables' to see variables and table columns.
+        '추가 변수(Additional Variables)' 모듈을 연결하면 사용 가능한 변수와 표 컬럼이 표시됩니다.
       </p>
     );
   }
@@ -2741,13 +2832,28 @@ const CalculateSurvivorsParams: React.FC<{
     allModules,
     allConnections
   );
-  const numericColumns =
+  // 입출력 자동 인식(설계 §6.2): 상류 실행 시 실제 컬럼, 미실행 시 정적 추론("예상값").
+  const inferredInput = getConnectedColumnsWithInference(
+    moduleId,
+    "data_in",
+    allModules,
+    allConnections
+  );
+  const liveNumeric =
     dataSource?.columns
       .filter(
         (c) =>
           c.type === "number" && c.name !== "i_prem" && c.name !== "i_claim"
       )
       .map((c) => c.name) || [];
+  // 실제 컬럼이 있으면 그것을, 없으면 추론 컬럼(i_prem/i_claim 제외)을 사용.
+  const numericColumns =
+    liveNumeric.length > 0
+      ? liveNumeric
+      : inferredInput.columns.filter(
+          (n) => n !== "i_prem" && n !== "i_claim" && n !== "Age" && n !== "Gender"
+        );
+  const columnsAreInferred = liveNumeric.length === 0 && inferredInput.inferred;
   const columnOptions = ["None", ...numericColumns];
 
   useEffect(() => {
@@ -2778,6 +2884,9 @@ const CalculateSurvivorsParams: React.FC<{
       id: newCalcId,
       name: "",
       decrementRates: [],
+      // D-1 확정: 새 항목의 기본 다중탈퇴 결합식 = 독립곱(계리적 정확값).
+      // 기존 저장 데이터(필드 없음)는 엔진 fallback 'udd'로 결과 불변(하위호환).
+      decrementMethod: "independent",
     };
     updateCalculations([...(calculations || []), newCalc]);
   };
@@ -2820,6 +2929,17 @@ const CalculateSurvivorsParams: React.FC<{
   const handleFixedNameChange = (id: string, name: string) => {
     const newCalculations = (calculations || []).map((calc: any) =>
       calc.id === id ? { ...calc, name } : calc
+    );
+    updateCalculations(newCalculations);
+  };
+
+  // 다중탈퇴 결합식 선택 (D-1): 항목별 'udd' | 'independent'
+  const handleDecrementMethodChange = (
+    id: string,
+    method: "udd" | "independent"
+  ) => {
+    const newCalculations = (calculations || []).map((calc: any) =>
+      calc.id === id ? { ...calc, decrementMethod: method } : calc
     );
     updateCalculations(newCalculations);
   };
@@ -2914,8 +3034,16 @@ const CalculateSurvivorsParams: React.FC<{
       </div>
 
       <div>
-        <h4 className="text-xs text-gray-400 font-bold mb-2">
+        <h4 className="text-xs text-gray-400 font-bold mb-2 flex items-center gap-2">
           Survivors (lx) Calculations
+          {columnsAreInferred && (
+            <span
+              className="px-1.5 py-0.5 rounded text-[10px] bg-amber-600/30 text-amber-300 border border-amber-700/50"
+              title="상류 모듈이 아직 실행되지 않아 컬럼명을 정적으로 추론한 예상값입니다. 파이프라인 실행 후 실제 컬럼으로 대체됩니다."
+            >
+              예상값
+            </span>
+          )}
         </h4>
         {numericColumns.length > 0 ? (
           <div className="space-y-2">
@@ -3063,6 +3191,43 @@ const CalculateSurvivorsParams: React.FC<{
                             Add Rate
                           </button>
                         </div>
+                      </div>
+                    )}
+
+                    {/* 다중탈퇴 결합식 선택 (D-1): 2개 이상 위험률일 때만 노출 */}
+                    {!isFixed && (calc.decrementRates || []).length >= 2 && (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[11px] text-gray-400 flex-shrink-0 flex items-center gap-1">
+                          다중탈퇴 결합식:
+                          <span
+                            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-gray-600 text-gray-200 text-[9px] font-bold cursor-help"
+                            title={
+                              "여러 위험률(예: 사망+장해)을 하나의 탈퇴율로 결합하는 방식입니다.\n" +
+                              "• UDD 보정: qm+qo−qm·qo/2 — 1년 내 탈퇴가 균등(UDD)하다고 가정해 1/2 보정. 일반 다중탈퇴표에 권장.\n" +
+                              "• 독립곱: 1−∏(1−qi) — 각 위험이 독립이라고 보고 곱으로 결합.\n" +
+                              "위험률 특성과 산출 기준에 맞게 선택하세요."
+                            }
+                          >
+                            ?
+                          </span>
+                        </span>
+                        <select
+                          value={calc.decrementMethod || "udd"}
+                          onChange={(e) =>
+                            handleDecrementMethodChange(
+                              calc.id,
+                              e.target.value as "udd" | "independent"
+                            )
+                          }
+                          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="udd">
+                            UDD 보정 (qm+qo−qm·qo/2) · 기본
+                          </option>
+                          <option value="independent">
+                            독립곱 1−∏(1−qi) (qm+qo−qm·qo)
+                          </option>
+                        </select>
                       </div>
                     )}
 
@@ -4312,6 +4477,8 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
   onRunModule,
   onModuleSaved,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const [isRunning, setIsRunning] = React.useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
   const [hasAppliedSavedDefaults, setHasAppliedSavedDefaults] = React.useState(false);
@@ -4448,34 +4615,36 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
       onClick={handleClose}
     >
       <div
-        className={`bg-gray-800 text-white rounded-lg shadow-xl w-full ${getModalWidthClass()} max-h-[90vh] flex flex-col`}
+        className={`rounded-lg shadow-xl w-full ${getModalWidthClass()} max-h-[90vh] flex flex-col ${
+          isDark ? "bg-gray-800 text-white" : "bg-white text-gray-900"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between p-4 border-b border-gray-700 flex-shrink-0">
-          <h2 className="text-xs font-bold">Edit Parameters: {module.name}</h2>
+        <header className={`flex items-center justify-between p-4 border-b flex-shrink-0 ${isDark ? "border-gray-700" : "border-gray-200"}`}>
+          <h2 className="text-xs font-bold">파라미터 편집: {module.name}</h2>
           <div className="flex items-center gap-2">
             <button
               onClick={handleSave}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-md font-semibold text-white transition-colors"
-              title="Save as default for this module type"
+              title="이 모듈 유형의 기본값으로 저장"
             >
               <BookmarkIcon className="h-3 w-3" />
-              저장
+              기본값으로 저장
             </button>
             {onRunModule && (
               <button
                 onClick={handleRun}
                 disabled={isRunning}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-600 hover:bg-green-500 rounded-md font-semibold text-white transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
-                title="Run this module"
+                title="이 모듈 실행"
               >
                 <PlayIcon className="h-3 w-3" />
-                {isRunning ? "Running..." : "Run"}
+                {isRunning ? "실행 중…" : "실행"}
               </button>
             )}
             <button
               onClick={handleClose}
-              className="text-gray-400 hover:text-white"
+              className={isDark ? "text-gray-400 hover:text-white" : "text-gray-500 hover:text-gray-900"}
             >
               <XCircleIcon className="w-5 h-5" />
             </button>
@@ -4488,12 +4657,14 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
             const section = extractModuleSection(fullDSL, module.type);
             if (!section) return null;
             return (
-              <div className="mt-4 border-t border-gray-700 pt-4">
+              <div className={`mt-4 border-t pt-4 ${isDark ? "border-gray-700" : "border-gray-200"}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-purple-300">DSL 섹션</span>
+                  <span className={`text-xs font-bold ${isDark ? "text-purple-300" : "text-purple-600"}`}>DSL 섹션</span>
                   <span className="text-[10px] text-gray-500">저장 시 DSL 편집기에 반영됩니다</span>
                 </div>
-                <pre className="bg-gray-900 border border-gray-700 rounded p-3 text-xs text-green-300 font-mono whitespace-pre overflow-x-auto max-h-60 custom-scrollbar">
+                <pre className={`border rounded p-3 text-xs font-mono whitespace-pre overflow-x-auto max-h-60 custom-scrollbar ${
+                  isDark ? "bg-gray-900 border-gray-700 text-green-300" : "bg-gray-50 border-gray-200 text-green-700"
+                }`}>
                   {section}
                 </pre>
               </div>
@@ -4506,11 +4677,11 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
       {showCloseConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[60]">
           <div
-            className="bg-gray-800 text-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4"
+            className={`rounded-lg shadow-xl p-6 max-w-md w-full mx-4 ${isDark ? "bg-gray-800 text-white" : "bg-white text-gray-900"}`}
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4">변경사항 저장 확인</h3>
-            <p className="text-sm text-gray-300 mb-6">
+            <p className={`text-sm mb-6 ${isDark ? "text-gray-300" : "text-gray-600"}`}>
               입력값이 변경되었습니다. 저장하지 않고 닫으시겠습니까?
             </p>
             <div className="flex gap-3 justify-end">

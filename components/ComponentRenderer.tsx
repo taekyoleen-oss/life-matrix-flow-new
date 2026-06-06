@@ -6,9 +6,11 @@ import { TOOLBOX_MODULES } from '../constants';
 import { ModuleOutputSummary } from './ModuleOutputSummary';
 import { ModuleInputSummary } from './ModuleInputSummary';
 import { useTheme } from '../contexts/ThemeContext';
+import { getPortHighlight, PortHighlight } from '../utils/portHighlight';
 
 interface PortComponentProps {
   port: Port; isInput: boolean; moduleId: string;
+  highlight?: PortHighlight;
   portRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   onStartConnection: (moduleId: string, portName: string, clientX: number, clientY: number, isInput: boolean) => void;
   onEndConnection: (moduleId: string, portName: string, isInput: boolean) => void;
@@ -48,6 +50,26 @@ const getStatusColors = (theme: 'light' | 'dark') => ({
     [ModuleStatus.Error]: theme === 'light' ? 'bg-red-100 border-red-500' : 'bg-red-900/50 border-red-500',
 });
 
+// 노드 상태 텍스트 라벨(접근성: 색만으로 구분하지 않도록 텍스트 병기).
+const STATUS_LABELS: Record<ModuleStatus, string> = {
+    [ModuleStatus.Pending]: '대기',
+    [ModuleStatus.Running]: '실행중',
+    [ModuleStatus.Success]: '완료',
+    [ModuleStatus.Error]: '오류',
+};
+
+// 상태 칩 색상(라이트/다크). 기존 노드 배경 색 규약(완료=파랑 등)은 유지하되,
+// 칩은 텍스트 가독성을 위해 별도 대비 색을 사용.
+const getStatusChipClasses = (status: ModuleStatus, theme: 'light' | 'dark'): string => {
+    const map: Record<ModuleStatus, { light: string; dark: string }> = {
+        [ModuleStatus.Pending]: { light: 'bg-gray-200 text-gray-700', dark: 'bg-gray-700 text-gray-200' },
+        [ModuleStatus.Running]: { light: 'bg-yellow-200 text-yellow-800', dark: 'bg-yellow-700/60 text-yellow-100' },
+        [ModuleStatus.Success]: { light: 'bg-blue-200 text-blue-800', dark: 'bg-blue-700/60 text-blue-100' },
+        [ModuleStatus.Error]: { light: 'bg-red-200 text-red-800', dark: 'bg-red-700/70 text-red-100' },
+    };
+    return theme === 'light' ? map[status].light : map[status].dark;
+};
+
 // Special status colors for ScenarioRunner and PipelineExplainer (always gray when pending)
 const getSpecialModuleStatusColors = (theme: 'light' | 'dark') => ({
     [ModuleStatus.Pending]: theme === 'light' ? 'bg-gray-200/50 border-gray-400' : 'bg-gray-700/50 border-gray-500',
@@ -56,7 +78,7 @@ const getSpecialModuleStatusColors = (theme: 'light' | 'dark') => ({
     [ModuleStatus.Error]: theme === 'light' ? 'bg-red-100 border-red-500' : 'bg-red-900/50 border-red-500',
 });
 
-const PortComponent: React.FC<PortComponentProps> = ({ port, isInput, moduleId, portRefs, onStartConnection, onEndConnection, isTappedSource, onTapPort, style }) => {
+const PortComponent: React.FC<PortComponentProps> = ({ port, isInput, moduleId, portRefs, onStartConnection, onEndConnection, isTappedSource, onTapPort, style, highlight }) => {
     const { theme } = useTheme();
     const handleMouseDown = (e: MouseEvent) => { e.stopPropagation(); onStartConnection(moduleId, port.name, e.clientX, e.clientY, isInput); };
     const handleMouseUp = (e: MouseEvent) => { e.stopPropagation(); onEndConnection(moduleId, port.name, isInput); };
@@ -68,11 +90,21 @@ const PortComponent: React.FC<PortComponentProps> = ({ port, isInput, moduleId, 
         <div 
              ref={el => { const key = `${moduleId}-${port.name}-${isInput ? 'in' : 'out'}`; if (el) portRefs.current.set(key, el); else portRefs.current.delete(key); }}
              style={style}
-             className={`w-4 h-4 rounded-full border-2 cursor-pointer z-10 ${isTappedSource ? 'bg-purple-500 border-purple-400 ring-2 ring-purple-300' : theme === 'light' ? 'bg-gray-400 border-gray-500 hover:bg-blue-500' : 'bg-gray-600 border-gray-400 hover:bg-blue-500'}`}
+             className={`w-4 h-4 rounded-full border-2 cursor-pointer z-10 transition-all ${
+               isTappedSource
+                 ? 'bg-purple-500 border-purple-400 ring-2 ring-purple-300'
+                 : highlight === 'compatible'
+                 ? 'bg-green-500 border-green-300 ring-2 ring-green-400 scale-125'
+                 : highlight === 'incompatible'
+                 ? `opacity-30 ${theme === 'light' ? 'bg-gray-300 border-gray-400' : 'bg-gray-700 border-gray-600'}`
+                 : theme === 'light'
+                 ? 'bg-gray-400 border-gray-500 hover:bg-blue-500'
+                 : 'bg-gray-600 border-gray-400 hover:bg-blue-500'
+             }`}
              onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}
              onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
              onClick={handleClick}
-             title={port.name}
+             title={highlight === 'incompatible' ? `${port.name} — 호환되지 않는 포트 타입` : port.name}
         />
     );
 };
@@ -104,6 +136,23 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
   const lastTapRef = useRef(0);
   const moduleInfo = TOOLBOX_MODULES.find(m => m.type === module.type);
   const [pendingDelete, setPendingDelete] = useState(false);
+
+  // 연결 드래그/탭 중인 소스 포트(사전 호환성 하이라이트용). 드래그가 우선, 없으면 탭 소스(항상 출력).
+  const activeSourcePort = (() => {
+    if (dragConnection) {
+      const sm = allModules.find(m => m.id === dragConnection.from.moduleId);
+      const sp = dragConnection.from.isInput
+        ? sm?.inputs.find(p => p.name === dragConnection.from.portName)
+        : sm?.outputs.find(p => p.name === dragConnection.from.portName);
+      if (sm && sp) return { moduleId: sm.id, isInput: dragConnection.from.isInput, type: sp.type as string };
+    }
+    if (tappedSourcePort) {
+      const sm = allModules.find(m => m.id === tappedSourcePort.moduleId);
+      const sp = sm?.outputs.find(p => p.name === tappedSourcePort.portName);
+      if (sm && sp) return { moduleId: sm.id, isInput: false, type: sp.type as string };
+    }
+    return null;
+  })();
 
   const handleDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); setPendingDelete(true); };
   const handleConfirmDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); onDelete(module.id); };
@@ -391,6 +440,17 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
             >
                 {module.name}
             </h3>
+            {!isSpecialModule && (
+                <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold leading-none flex-shrink-0 ${getStatusChipClasses(module.status, theme)}`}
+                    title={`상태: ${STATUS_LABELS[module.status]}`}
+                >
+                    {module.status === ModuleStatus.Running && (
+                        <span className="inline-block w-1.5 h-1.5 mr-0.5 rounded-full bg-current animate-pulse align-middle" />
+                    )}
+                    {STATUS_LABELS[module.status]}
+                </span>
+            )}
          </div>
          <div className="flex items-center gap-1 flex-shrink-0">
              {isSpecialModule ? (
@@ -424,7 +484,7 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                         ? (theme === 'light' ? 'text-green-600 hover:bg-green-100 hover:text-green-700' : 'text-green-500 hover:bg-green-900/30 hover:text-green-400')
                         : (theme === 'light' ? 'text-blue-600 hover:bg-blue-100 hover:text-blue-700' : 'text-blue-500 hover:bg-blue-900/30 hover:text-blue-400')
                 }`}
-                title={isRunnable ? (module.status === ModuleStatus.Success ? "Module executed successfully" : "Run Module") : "Upstream modules must run successfully first"}
+                title={isRunnable ? (module.status === ModuleStatus.Success ? "실행 완료 — 다시 실행하려면 클릭" : "이 모듈 실행") : "먼저 상류(왼쪽) 모듈이 성공해야 실행할 수 있습니다"}
              >
                 <PlayIcon className="w-8 h-8" />
              </button>
@@ -438,7 +498,7 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                <button
                  onClick={handleDelete}
                  className={`p-1 ${theme === 'light' ? 'text-gray-600 hover:text-red-500 hover:bg-red-100' : 'text-gray-500 hover:text-red-400 hover:bg-red-900/30'} rounded-full transition-colors`}
-                 title="Delete Module"
+                 title="모듈 삭제"
                >
                  <XMarkIcon className="w-4 h-4" />
                </button>
@@ -457,11 +517,11 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
            >
                 {/* Tooltip for Description */}
                 <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-black text-xs text-gray-200 rounded shadow-lg z-50 pointer-events-none border border-gray-600">
-                    {moduleInfo?.description}
-                    <div className="text-[10px] text-gray-500 mt-1">Click to edit parameters</div>
+                    {(moduleInfo as any)?.descriptionKo || moduleInfo?.description}
+                    <div className="text-[10px] text-blue-300 mt-1 font-semibold">✎ 클릭하면 파라미터를 편집합니다</div>
                 </div>
 
-                <span className={`font-black ${theme === 'light' ? 'text-gray-600' : 'text-gray-500'} text-[8px] tracking-widest text-center mb-0.5`}>INPUT</span>
+                <span className={`font-black ${theme === 'light' ? 'text-gray-600' : 'text-gray-500'} text-[8px] tracking-widest text-center mb-0.5`}>입력·편집</span>
 
                 {/* Parameter Summary */}
                 <div className="flex-grow flex items-center justify-center">
@@ -479,11 +539,12 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                     
                     return (
                         <div key={port.name} className="absolute left-[-9px] z-10" style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}>
-                            <PortComponent 
+                            <PortComponent
                                 port={port} isInput={true} moduleId={module.id} portRefs={portRefs}
                                 onStartConnection={onStartConnection} onEndConnection={onEndConnection}
                                 isTappedSource={tappedSourcePort?.moduleId === module.id && tappedSourcePort?.portName === port.name}
                                 onTapPort={onTapPort}
+                                highlight={getPortHighlight(activeSourcePort, module.id, port.type, true)}
                                 style={{}}
                             />
                              {/* Port Label Tooltip */}
@@ -502,10 +563,15 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
            >
                  {/* Tooltip for View Results (DefinePolicyInfo 제외) */}
                  {module.type !== ModuleType.DefinePolicyInfo && (
-                 <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block px-2 py-1 bg-black text-[10px] text-gray-200 rounded shadow-lg z-50 pointer-events-none border border-gray-600 whitespace-nowrap">
-                    Click to view Results
+                 <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block px-2 py-1 bg-black text-[10px] text-emerald-300 font-semibold rounded shadow-lg z-50 pointer-events-none border border-gray-600 whitespace-nowrap">
+                    ▶ 클릭하면 결과를 봅니다
                  </div>
                  )}
+
+                {/* 우측 영역 = 결과 보기 (좌측 편집과 구분) */}
+                {module.type !== ModuleType.DefinePolicyInfo && (
+                  <span className={`font-black ${theme === 'light' ? 'text-gray-600' : 'text-gray-500'} text-[8px] tracking-widest text-center mb-0.5`}>출력·결과</span>
+                )}
 
                 <ModuleOutputSummary module={module} />
 
@@ -517,11 +583,12 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
 
                     return (
                         <div key={port.name} className="absolute right-[-9px] z-10" style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}>
-                             <PortComponent 
+                             <PortComponent
                                 port={port} isInput={false} moduleId={module.id} portRefs={portRefs}
                                 onStartConnection={onStartConnection} onEndConnection={onEndConnection}
                                 isTappedSource={tappedSourcePort?.moduleId === module.id && tappedSourcePort?.portName === port.name}
                                 onTapPort={onTapPort}
+                                highlight={getPortHighlight(activeSourcePort, module.id, port.type, false)}
                                 style={{}}
                             />
                             {/* Port Label Tooltip */}

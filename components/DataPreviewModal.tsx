@@ -492,13 +492,23 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
                         {data.columns.map((col) => (
                           <th
                             key={col.name}
+                            title={col.description || undefined}
                             className={`py-2 px-3 font-semibold text-gray-600 ${
+                              col.description ? "cursor-help" : ""
+                            } ${
                               col.name.startsWith("NNX_") || col.name === "BPV_Col"
                                 ? "bg-green-50"
                                 : ""
                             }`}
                           >
-                            {col.name}
+                            <span className="inline-flex items-center gap-1">
+                              {col.name}
+                              {col.description && (
+                                <span className="text-blue-400 text-[10px] leading-none flex-shrink-0">
+                                  ℹ
+                                </span>
+                              )}
+                            </span>
                           </th>
                         ))}
                       </tr>

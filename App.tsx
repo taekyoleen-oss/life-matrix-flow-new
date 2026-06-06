@@ -48,6 +48,7 @@ import {
   SunIcon,
   MoonIcon,
   ArrowDownTrayIcon,
+  ArrowPathIcon,
 } from "./components/icons";
 import useHistoryState from "./hooks/useHistoryState";
 import { useTheme } from "./contexts/ThemeContext";
@@ -165,7 +166,8 @@ const getModuleDefault = (type: ModuleType) => {
   
   return {
     type,
-    name: moduleInfo.name,
+    // 표시명은 한글 우선(+영문 약어 병기). DSL/내부 식별은 module.type 기준이라 안전.
+    name: (moduleInfo as any).nameKo || moduleInfo.name,
     status: ModuleStatus.Pending,
     parameters, // Deep copy
     inputs: JSON.parse(JSON.stringify(defaultData.inputs)), // Deep copy
@@ -293,7 +295,10 @@ const initialModules: CanvasModule[] = lifxModules.length > 0 ? lifxModules : [
     ...getModuleDefault(ModuleType.NetPremiumCalculator),
     position: { x: 320, y: 220 },
     parameters: {
-      formula: "[BPV_Mortality] / [NNX_Mortality(Year)]",
+      // 기본 상류 출력(베이스명 "Male_Mortality")과 일치하도록 동기화.
+      // 이전 값 "[BPV_Mortality] / [NNX_Mortality(Year)]" 은 상류가 만들지 않는
+      // 토큰을 참조하여 첫 Run All 즉시 실패의 원인이었음(UX P0).
+      formula: "[BPV_Male_Mortality] / [NNX_Male_Mortality(Year)]",
       variableName: "PP",
     },
   },
@@ -311,8 +316,11 @@ const initialModules: CanvasModule[] = lifxModules.length > 0 ? lifxModules : [
     ...getModuleDefault(ModuleType.ReserveCalculator),
     position: { x: 320, y: 400 },
     parameters: {
-      formulaForPaymentTermOrLess: "",
-      formulaForGreaterThanPaymentTerm: "",
+      // 첫 Run All이 끝까지 성공하도록 유효한 기본 수식("0" = 준비금 0)을 제공한다(UX P0).
+      // 빈 수식 2개이면 엔진이 "준비금 수식을 1개 이상 정의해야 합니다" 오류로 즉시 실패함.
+      // 사용자는 자신의 준비금 산출식(예: 장래법/과거법)으로 교체하면 된다.
+      formulaForPaymentTermOrLess: "0",
+      formulaForGreaterThanPaymentTerm: "0",
       reserveColumnName: "Reserve",
     },
   },
@@ -755,8 +763,57 @@ const App: React.FC = () => {
   const pasteOffset = useRef(0);
 
   const [isDirty, setIsDirty] = useState(false);
-  const [saveButtonText, setSaveButtonText] = useState("Save");
+  const [saveButtonText, setSaveButtonText] = useState("저장");
   const [initialSavedToast, setInitialSavedToast] = useState<string | null>(null);
+
+  // 온보딩 가이드: 첫 방문(또는 닫기 전)에 4단계 산출 순서를 안내. localStorage로 재표시 억제.
+  const ONBOARDING_KEY = "lifeMatrixFlow_onboardingDismissed";
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ONBOARDING_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+  const dismissOnboarding = useCallback((remember: boolean) => {
+    setShowOnboarding(false);
+    if (remember) {
+      try {
+        localStorage.setItem(ONBOARDING_KEY, "1");
+      } catch {
+        /* localStorage 불가 환경 무시 */
+      }
+    }
+  }, []);
+
+  // 범용 토스트(실행 결과·연결 거부 등 비차단 알림). 기존 alert 흐름 단절을 대체.
+  const [toast, setToast] = useState<
+    | {
+        message: string;
+        kind: "info" | "success" | "error" | "warning";
+        actionLabel?: string;
+        onAction?: () => void;
+      }
+    | null
+  >(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = useCallback(
+    (
+      message: string,
+      kind: "info" | "success" | "error" | "warning" = "info",
+      opts?: { durationMs?: number; actionLabel?: string; onAction?: () => void }
+    ) => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setToast({ message, kind, actionLabel: opts?.actionLabel, onAction: opts?.onAction });
+      const duration = opts?.durationMs ?? (kind === "error" ? 6000 : 3500);
+      toastTimerRef.current = setTimeout(() => setToast(null), duration);
+    },
+    []
+  );
+
+  // 전역 실행 상태(Run All 버튼 로딩/진행 표시용)
+  const [isRunning, setIsRunning] = useState(false);
+  const [runProgress, setRunProgress] = useState<{ done: number; total: number } | null>(null);
 
   // Canvas tabs: multiple canvases with add/rename
   const [tabs, setTabs] = useState<{ id: string; name: string; backgroundColor?: string }[]>([{ id: "tab-1", name: "Tab 1" }]);
@@ -1015,7 +1072,9 @@ const App: React.FC = () => {
     const padding = 50;
     const scaleX = (canvasRect.width - padding * 2) / contentWidth;
     const scaleY = (canvasRect.height - padding * 2) / contentHeight;
-    const newScale = Math.min(scaleX, scaleY, 1);
+    // 노드 텍스트가 식별 불가능할 정도로 과도하게 축소(이전 14%)되는 것을 방지하기 위해
+    // 하한 0.4를 둔다. 일부 노드가 화면 밖이어도 최소 가독성을 우선(UX P2).
+    const newScale = Math.max(0.4, Math.min(scaleX, scaleY, 1));
 
     const newPanX =
       (canvasRect.width - contentWidth * newScale) / 2 - minX * newScale;
@@ -1025,6 +1084,28 @@ const App: React.FC = () => {
     setScale(newScale);
     setPan({ x: newPanX, y: newPanY });
   }, [modules]);
+
+  // 특정 노드를 화면 중앙으로 이동(pan). 실패/선택 노드가 화면 밖일 때 사용(UX P1).
+  const centerOnModule = useCallback(
+    (moduleId: string) => {
+      if (!canvasContainerRef.current) return;
+      const target = modules.find((m) => m.id === moduleId);
+      if (!target) return;
+      const canvasRect = canvasContainerRef.current.getBoundingClientRect();
+      const moduleWidth = 224;
+      const moduleHeight = 80;
+      setScale((prevScale) => {
+        const s = prevScale;
+        const newPanX =
+          canvasRect.width / 2 - (target.position.x + moduleWidth / 2) * s;
+        const newPanY =
+          canvasRect.height / 2 - (target.position.y + moduleHeight / 2) * s;
+        setPan({ x: newPanX, y: newPanY });
+        return prevScale;
+      });
+    },
+    [modules]
+  );
 
   const handleRearrangeModules = useCallback(() => {
     if (modules.length === 0) return;
@@ -1292,8 +1373,8 @@ const App: React.FC = () => {
         description: "Life Matrix File",
         onSuccess: (fileName) => {
           setIsDirty(false);
-          setSaveButtonText("Saved!");
-          setTimeout(() => setSaveButtonText("Save"), 2000);
+          setSaveButtonText("저장됨!");
+          setTimeout(() => setSaveButtonText("저장"), 2000);
         },
         onError: (error) => {
           console.error("Failed to save pipeline:", error);
@@ -1505,7 +1586,9 @@ const App: React.FC = () => {
               throw new Error(`Module type "${m.type}" not found`);
             }
             const moduleInfo = TOOLBOX_MODULES.find((tm) => tm.type === m.type);
-            const defaultName = moduleInfo ? moduleInfo.name : m.type;
+            const defaultName = moduleInfo
+              ? (moduleInfo as any).nameKo || moduleInfo.name
+              : m.type;
             return {
               ...defaultModule,
               id: moduleId,
@@ -1987,7 +2070,9 @@ const App: React.FC = () => {
         : JSON.parse(JSON.stringify(defaultData.parameters));
 
       const moduleInfo = TOOLBOX_MODULES.find((m) => m.type === type);
-      const baseName = moduleInfo ? moduleInfo.name : type;
+      const baseName = moduleInfo
+        ? (moduleInfo as any).nameKo || moduleInfo.name
+        : type;
       const count = modules.filter((m) => m.type === type).length + 1;
 
       // Check if this is a special module that needs a container box
@@ -3117,8 +3202,16 @@ const App: React.FC = () => {
                     1
                   );
                   const q_others = 1 - otherSurvivalProduct;
+                  // 다중탈퇴 결합식 선택 (D-1):
+                  //  - 'independent' (독립곱): 1 - ∏(1 - qi) = qm + q_others - qm*q_others
+                  //  - 'udd' (기본/미지정): UDD 1/2 보정 = qm + q_others - qm*q_others/2  (기존 동작)
+                  // D-1 확정: 새 항목 기본값은 독립곱(UI에서 'independent' 명시). 엔진 fallback은 'udd'로
+                  // 유지하여, decrementMethod 필드가 없는 레거시 데이터의 산출 결과가 불변임을 보장한다.
+                  const decrementMethod = calc.decrementMethod ?? "udd";
                   const totalDecrementFactor =
-                    mortalityRate + q_others - (mortalityRate * q_others) / 2.0;
+                    decrementMethod === "independent"
+                      ? mortalityRate + q_others - mortalityRate * q_others
+                      : mortalityRate + q_others - (mortalityRate * q_others) / 2.0;
                   deaths = currentSurvivors * totalDecrementFactor;
                 }
                 currentSurvivors -= deaths;
@@ -3759,11 +3852,14 @@ const App: React.FC = () => {
                 const nnxMonth = nnxYear - (11/24) * dx_diff;
                 nnxResults[`NNX_${baseName}(Month)`] = roundTo5(nnxMonth);
               } else {
-                // If DX column is not selected, only Year version is available
-                // Set other versions to NaN or 0 to indicate they're not available
-                nnxResults[`NNX_${baseName}(Half)`] = NaN;
-                nnxResults[`NNX_${baseName}(Quarter)`] = NaN;
-                nnxResults[`NNX_${baseName}(Month)`] = NaN;
+                // QA-OBS-1: dxColumn 미지정 시 과거에는 Half/Quarter/Month=NaN 으로 두어
+                // 이 토큰이 보험료(NetPremium) 수식에 쓰이면 PP=NaN 으로 조용히 전파되었다.
+                // 분할납 보정항 (k * dx_diff) 의 dx_diff 가 미가용(=0)인 것과 동일하게 취급하여
+                // Year 값(=보정 없음)으로 폴백한다. NaN 전파를 차단하면서 수식 평가가 가능해진다.
+                // (dxColumn 지정 시 결과는 위 분기로 처리되어 불변)
+                nnxResults[`NNX_${baseName}(Half)`] = roundTo5(nnxYear);
+                nnxResults[`NNX_${baseName}(Quarter)`] = roundTo5(nnxYear);
+                nnxResults[`NNX_${baseName}(Month)`] = roundTo5(nnxYear);
               }
             }
 
@@ -3851,15 +3947,18 @@ const App: React.FC = () => {
                     const nnxMonth = nnxYear - (11/24) * dx_diff;
                     newRow[`NNX_${baseName}(Month)_Col`] = roundTo5(nnxMonth);
                   } else {
-                    // If DX column is not selected, set other versions to NaN
-                    newRow[`NNX_${baseName}(Half)_Col`] = NaN;
-                    newRow[`NNX_${baseName}(Quarter)_Col`] = NaN;
-                    newRow[`NNX_${baseName}(Month)_Col`] = NaN;
+                    // QA-OBS-1 일관성: dxColumn 미지정 시 표 컬럼도 NaN 대신 Year 값으로 폴백
+                    // (분할납 보정항 dx_diff=0 과 동일). 표시 NaN 노이즈 제거.
+                    newRow[`NNX_${baseName}(Half)_Col`] = roundTo5(nnxYear);
+                    newRow[`NNX_${baseName}(Quarter)_Col`] = roundTo5(nnxYear);
+                    newRow[`NNX_${baseName}(Month)_Col`] = roundTo5(nnxYear);
                   }
                 }
               }
 
-              // Add BPV column: Sum of all Mx columns × Benefit Amount
+              // D-7 주의: BPV_Col(표 컬럼) = 현재 행의 Σ(Mx[행] × benefitAmount).
+              //   보험료에 쓰이는 scalar BPV( (Mx[0]-Mx[종단])×amount, 구간차, line ~3787 )와
+              //   정의가 다르므로 두 값을 직접 비교하면 안 된다. (계리 의도 미확정 → 수식 미변경)
               let mmxValue = 0;
               for (const calc of sumxCalculations) {
                 if (!calc.mxColumn) continue;
@@ -3906,6 +4005,15 @@ const App: React.FC = () => {
               enhancedColumns.push({
                 name: "BPV_Col",
                 type: "number",
+                // D-7: 이 표 컬럼은 각 행에서 Σ(Mx[해당행] × benefitAmount) 누적값이며,
+                // 보험료 산출에 쓰이는 scalar BPV( (Mx[0]-Mx[종단]) × amount, 구간차 )와는 정의가 다르다.
+                // 두 값을 직접 비교하지 말 것.
+                description:
+                  "보험금 현가(행별 참고용)\n" +
+                  "공식: BPV_Col[행] = Σ(Mx[행] × 보험금)\n" +
+                  "⚠ 보험료에 쓰이는 BPV(scalar)와 다릅니다.\n" +
+                  "scalar BPV = (Mx[0] − Mx[종단]) × 보험금 (구간차)\n" +
+                  "이 열은 각 행 누적값이라 scalar BPV와 직접 비교하지 마세요.",
               });
             }
 
@@ -4301,6 +4409,10 @@ const App: React.FC = () => {
             // Remove any single brackets around numbers
             expression = expression.replace(/\[(\d+\.?\d*)\]/g, "$1");
 
+            // D-8: NetPremium 도 다른 수식 모듈(RateModifier/Gross/Reserve)과 동일하게 IF() 지원.
+            // IF(cond, a, b) → (cond ? a : b) 변환. IF 가 없는 수식은 입력 그대로 반환되어 결과 불변.
+            expression = processIfStatements(expression);
+
             validateFormulaExpression(expression);
             const netPremium = new Function("return " + expression)();
 
@@ -4540,7 +4652,7 @@ const App: React.FC = () => {
               !formulaForPaymentTermOrLess &&
               !formulaForGreaterThanPaymentTerm
             ) {
-              throw new Error("At least one reserve formula must be defined.");
+              throw new Error("준비금 수식을 1개 이상 입력하세요. (납입기간 이하/초과 중 최소 하나)");
             }
 
             const outputRows = inputData.rows.map((r) => ({ ...r }));
@@ -4576,6 +4688,37 @@ const App: React.FC = () => {
                 PolicyTerm: reserveEffectiveN,
                 ...grossPremiumInput.variables,
               };
+
+              // D-9: 행참조 문법 [col][t|m|n|0] 지원 (표시코드 codeSnippets.ts 와 단일화).
+              //   [col][t] → 현재 행, [col][0] → 첫 행, [col][m] → 납입종료행(payment_term-1),
+              //   [col][n] → 마지막 데이터행(len-1).
+              //   엔진의 기존 동작(단독 [col]=현재행, 단독 [m]/[n]=스칼라)과 충돌하지 않도록
+              //   *행참조(인덱스 접미)* 를 먼저 숫자값으로 치환한다.
+              //   레거시 [col][idx] 와 신형 col[idx] 두 표기를 모두 처리.
+              const resolveRowRef = (
+                colName: string,
+                idxToken: string
+              ): string => {
+                let targetIdx: number;
+                if (idxToken === "t") targetIdx = rowIndex;
+                else if (idxToken === "0") targetIdx = 0;
+                else if (idxToken === "m") targetIdx = paymentTerm - 1;
+                else if (idxToken === "n") targetIdx = outputRows.length - 1;
+                else return "0";
+                if (targetIdx < 0 || targetIdx >= outputRows.length) return "0";
+                const v = outputRows[targetIdx]?.[colName];
+                return String(v ?? 0);
+              };
+              // 레거시: [Col][t|m|n|0]
+              evalFormula = evalFormula.replace(
+                /\[([A-Za-z_][A-Za-z0-9_]*)\]\[(t|m|n|0)\]/g,
+                (_m, col, idx) => resolveRowRef(col, idx)
+              );
+              // 신형: Col[t|m|n|0]
+              evalFormula = evalFormula.replace(
+                /([A-Za-z_][A-Za-z0-9_]*)\[(t|m|n|0)\]/g,
+                (_m, col, idx) => resolveRowRef(col, idx)
+              );
 
               // Replace table column values
               const keys = Object.keys(row).sort((a, b) => b.length - a.length);
@@ -4892,6 +5035,21 @@ const App: React.FC = () => {
               type: "PipelineExplainerOutput",
               steps: steps,
             };
+          } else if (
+            module.type === ModuleType.TextBox ||
+            module.type === ModuleType.GroupBox ||
+            module.type === ModuleType.ScenarioRunner
+          ) {
+            // C-2: 비계산(annotation/container) 모듈 + ScenarioRunner(별도 runScenarioRunner 경유)는
+            // executePipeline 에서 의도적 no-op. status=Success 유지하되 출력은 없음(undefined)이 의도된 동작.
+            // 이렇게 명시 분기로 처리해야 아래 최종 else 의 "미지원 타입 throw" 에 걸리지 않는다.
+            newOutputData = undefined;
+          } else {
+            // C-2: 위 어떤 분기에도 해당하지 않는 진짜 미지원/신규 ModuleType 은
+            // 빈 Success 로 위장시키지 않고 명시적으로 실패시킨다(silent failure 방지).
+            throw new Error(
+              "지원하지 않는 모듈 타입입니다: " + module.type
+            );
           }
 
           newStatus = ModuleStatus.Success;
@@ -5152,11 +5310,15 @@ const App: React.FC = () => {
         return;
       }
 
-      // Filter out ScenarioRunner and PipelineExplainer from Run All
+      // Filter out non-computing / specially-handled modules from Run All.
+      // ScenarioRunner: 별도 runScenarioRunner 경유. PipelineExplainer: 명시 실행 대상.
+      // TextBox/GroupBox: 비계산 annotation/container → Run All 에서 제외(빈 Success 노이즈 방지, C-2).
       const filteredModules = modules.filter(
         (m) =>
           m.type !== ModuleType.ScenarioRunner &&
-          m.type !== ModuleType.PipelineExplainer
+          m.type !== ModuleType.PipelineExplainer &&
+          m.type !== ModuleType.TextBox &&
+          m.type !== ModuleType.GroupBox
       );
 
       // A-1: 순환 참조(Circular Dependency) 검사 (Run All 시에만)
@@ -5220,6 +5382,13 @@ const App: React.FC = () => {
 
         if (unconnectedInputs.length > 0) {
           console.warn("미연결 입력 포트:\n" + unconnectedInputs.join("\n"));
+          // 사용자에게도 안내(비차단). 미연결 입력은 해당 모듈을 건너뛰게 하므로 사전 고지.
+          const count = unconnectedInputs.length;
+          showToast(
+            `입력이 연결되지 않은 포트 ${count}곳이 있어 일부 모듈이 실행되지 않을 수 있습니다. (콘솔에서 상세 확인)`,
+            "warning",
+            { durationMs: 5000 }
+          );
         }
       }
 
@@ -5245,6 +5414,10 @@ const App: React.FC = () => {
       }));
       setModules(modulesToRun);
 
+      // 전역 실행 상태 ON (Run All 버튼 로딩/진행 표시)
+      setIsRunning(true);
+      setRunProgress({ done: 0, total: runQueue.length });
+
       try {
         const finalModules = await executePipeline(
           modulesToRun,
@@ -5264,11 +5437,24 @@ const App: React.FC = () => {
         if (failedModuleInQueue) {
           const errorMsg = `Pipeline execution failed at module: ${failedModuleInQueue.name}`;
           console.error(errorMsg);
-          alert(
-            `${errorMsg}\n\nCheck the Terminal panel for detailed error logs.`
-          );
           setIsCodePanelVisible(true);
           setSelectedModuleIds([failedModuleInQueue.id]);
+          // 실패 노드가 화면 밖일 수 있으므로 중앙으로 이동.
+          centerOnModule(failedModuleInQueue.id);
+          // 영문 alert → 한글 토스트(비차단). 클릭 시 원인(터미널) 확인.
+          showToast(
+            `'${failedModuleInQueue.name}' 모듈에서 실행이 실패했습니다. 클릭하여 원인을 확인하세요.`,
+            "error",
+            {
+              durationMs: 8000,
+              actionLabel: "원인 보기",
+              onAction: () => {
+                setIsCodePanelVisible(true);
+                setSelectedModuleIds([failedModuleInQueue.id]);
+                centerOnModule(failedModuleInQueue.id);
+              },
+            }
+          );
         } else if (startModuleId) {
           // Reset downstream modules on success
           const adj: Record<string, string[]> = {};
@@ -5311,10 +5497,25 @@ const App: React.FC = () => {
             });
           }
         }
+
+        // 성공 피드백(비차단 토스트). 실패가 없을 때만.
+        if (!failedModuleInQueue) {
+          const ranCount = runQueue.length;
+          showToast(
+            startModuleId
+              ? "모듈 실행이 완료되었습니다."
+              : `전체 실행이 완료되었습니다 (모듈 ${ranCount}개).`,
+            "success"
+          );
+        }
       } catch (error: any) {
-        // This catch block handles unexpected errors outside executePipeline (e.g. during getTopologicalSort or setModules)
+        // executePipeline 외부의 예기치 못한 오류(getTopologicalSort/setModules 등) 처리
         console.error("Unexpected error during simulation run:", error);
-        alert(`An unexpected error occurred: ${error.message}`);
+        showToast(`예기치 못한 오류가 발생했습니다: ${error.message}`, "error");
+      } finally {
+        // 전역 실행 상태 OFF (Run All 버튼 로딩 해제)
+        setIsRunning(false);
+        setRunProgress(null);
       }
     },
     [
@@ -5323,6 +5524,8 @@ const App: React.FC = () => {
       executePipeline,
       runScenarioRunner,
       getTopologicalSort,
+      showToast,
+      centerOnModule,
     ]
   );
 
@@ -5500,7 +5703,7 @@ const App: React.FC = () => {
   const categorizedModules = [
     { name: "도형메뉴", types: [ModuleType.TextBox, ModuleType.GroupBox] },
     {
-      name: "Data",
+      name: "데이터",
       types: [
         ModuleType.DefinePolicyInfo,
         ModuleType.LoadData,
@@ -5510,7 +5713,7 @@ const App: React.FC = () => {
       ],
     },
     {
-      name: "Actuarial",
+      name: "계리계산",
       types: [
         ModuleType.CalculateSurvivors,
         ModuleType.ClaimsCalculator,
@@ -5523,7 +5726,7 @@ const App: React.FC = () => {
       ],
     },
     {
-      name: "Automation",
+      name: "자동화",
       types: [ModuleType.ScenarioRunner, ModuleType.PipelineExplainer],
     },
   ];
@@ -5542,12 +5745,167 @@ const App: React.FC = () => {
     return modules.find((m) => m.id === lastId) || null;
   }, [selectedModuleIds, modules]);
 
+  // 온보딩 체크리스트 진행도(현재 상태 반영). 엔진 무관, 순수 표시용.
+  const onboardingProgress = (() => {
+    const hasData = modules.some(
+      (m) => m.type === ModuleType.LoadData && m.status === ModuleStatus.Success
+    );
+    const hasConnections = connections.length > 0;
+    const hasParams = modules.some(
+      (m) =>
+        m.type === ModuleType.NetPremiumCalculator &&
+        !!(m.parameters?.formula && String(m.parameters.formula).trim())
+    );
+    const hasRun = modules.some((m) => m.status === ModuleStatus.Success);
+    return { hasData, hasConnections, hasParams, hasRun };
+  })();
+
   return (
     <div className="bg-white dark:bg-gray-900 text-gray-900 dark:text-white h-screen w-full flex flex-col overflow-hidden transition-colors duration-200">
+      {/* 온보딩 가이드(첫 방문) — 4단계 산출 순서 체크리스트 */}
+      {showOnboarding && (
+        <div
+          className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
+          onClick={() => dismissOnboarding(false)}
+        >
+          <div
+            className="w-[92vw] max-w-md rounded-2xl shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-label="시작 가이드"
+          >
+            <div className="flex items-start justify-between mb-1">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <SparklesIcon className="h-5 w-5 text-blue-500" />
+                보험료 산출 시작하기
+              </h2>
+              <button
+                onClick={() => dismissOnboarding(false)}
+                className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 rounded-full transition-colors"
+                aria-label="닫기"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              아래 순서대로 진행하면 순보험료·영업보험료·준비금을 산출할 수 있습니다.
+            </p>
+            <ol className="space-y-3">
+              {[
+                {
+                  done: onboardingProgress.hasData,
+                  title: "1) 위험률 데이터 로드",
+                  desc: "왼쪽 [데이터] 메뉴의 “위험률 데이터 로드”로 사망률 등 위험률표(CSV)를 불러옵니다.",
+                },
+                {
+                  done: onboardingProgress.hasConnections,
+                  title: "2) 모듈 연결",
+                  desc: "노드의 오른쪽 출력 포트를 다음 노드의 왼쪽 입력 포트로 드래그해 연결합니다.",
+                },
+                {
+                  done: onboardingProgress.hasParams,
+                  title: "3) 파라미터 입력",
+                  desc: "노드의 왼쪽(입력·편집) 영역을 클릭해 가입정보·수식 등 값을 입력합니다.",
+                },
+                {
+                  done: onboardingProgress.hasRun,
+                  title: "4) 실행 및 결과 확인",
+                  desc: "상단 [전체 실행]으로 파이프라인을 돌리고, 노드 오른쪽(출력·결과)을 클릭해 결과를 봅니다.",
+                },
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                      step.done
+                        ? "bg-emerald-500 text-white"
+                        : "bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-300"
+                    }`}
+                  >
+                    {step.done ? "✓" : i + 1}
+                  </span>
+                  <div>
+                    <p
+                      className={`text-sm font-semibold ${
+                        step.done
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-gray-900 dark:text-gray-100"
+                      }`}
+                    >
+                      {step.title}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-snug">
+                      {step.desc}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button
+                onClick={() => dismissOnboarding(true)}
+                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              >
+                다시 보지 않기
+              </button>
+              <button
+                onClick={() => dismissOnboarding(false)}
+                className="px-4 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+              >
+                시작하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* 초기 화면 저장 토스트 */}
       {initialSavedToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold text-white bg-gray-900 dark:bg-gray-100 dark:text-gray-900 border border-gray-700 dark:border-gray-300 flex items-center gap-2 animate-fade-in">
           {initialSavedToast}
+        </div>
+      )}
+      {/* 범용 토스트(실행 결과·경고·오류) — 비차단 알림 */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[10000] px-5 py-3 rounded-xl shadow-2xl text-sm font-semibold flex items-center gap-3 animate-fade-in max-w-[90vw] ${
+            toast.kind === "error"
+              ? "bg-red-600 text-white border border-red-400"
+              : toast.kind === "warning"
+              ? "bg-amber-500 text-white border border-amber-300"
+              : toast.kind === "success"
+              ? "bg-emerald-600 text-white border border-emerald-400"
+              : "bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 border border-gray-700 dark:border-gray-300"
+          }`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="flex-shrink-0">
+            {toast.kind === "error"
+              ? "⚠"
+              : toast.kind === "warning"
+              ? "⚠"
+              : toast.kind === "success"
+              ? "✓"
+              : "ℹ"}
+          </span>
+          <span className="leading-snug">{toast.message}</span>
+          {toast.actionLabel && toast.onAction && (
+            <button
+              onClick={() => {
+                toast.onAction?.();
+                setToast(null);
+              }}
+              className="ml-1 px-2 py-0.5 rounded-md bg-white/20 hover:bg-white/30 text-white text-xs font-bold flex-shrink-0 transition-colors"
+            >
+              {toast.actionLabel}
+            </button>
+          )}
+          <button
+            onClick={() => setToast(null)}
+            className="ml-1 text-white/80 hover:text-white flex-shrink-0"
+            aria-label="닫기"
+          >
+            <XMarkIcon className="h-4 w-4" />
+          </button>
         </div>
       )}
       <header className="flex flex-col px-4 py-1.5 bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex-shrink-0 z-20 relative overflow-visible">
@@ -5587,6 +5945,13 @@ const App: React.FC = () => {
         {/* 두 번째 줄: 테마, Undo/Redo, Set Folder, Load, Save, Run All */}
         <div className="flex items-center justify-end gap-2 w-full overflow-x-auto scrollbar-hide mt-1">
           <button
+            onClick={() => setShowOnboarding(true)}
+            className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
+            title="시작 가이드 (산출 4단계 안내)"
+          >
+            <SparklesIcon className="h-5 w-5 text-blue-500" />
+          </button>
+          <button
             onClick={toggleTheme}
             className="p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
             title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
@@ -5617,18 +5982,18 @@ const App: React.FC = () => {
           <button
             onClick={handleSetFolder}
             className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-md font-semibold transition-colors flex-shrink-0"
-            title="Set Save Folder"
+            title="저장 폴더 지정"
           >
             <FolderOpenIcon className="h-4 w-4" />
-            <span>Set Folder</span>
+            <span>폴더 지정</span>
           </button>
           <button
             onClick={handleLoadPipeline}
             className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-white rounded-md font-semibold transition-colors flex-shrink-0"
-            title="Load Pipeline"
+            title="파이프라인 불러오기"
           >
             <FolderOpenIcon className="h-4 w-4" />
-            <span>Load</span>
+            <span>불러오기</span>
           </button>
           <button
             onClick={handleSavePipeline}
@@ -5638,9 +6003,9 @@ const App: React.FC = () => {
                 ? "bg-gray-400 dark:bg-gray-600 cursor-not-allowed opacity-50"
                 : "bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600"
             }`}
-            title="Save Pipeline"
+            title="파이프라인 저장"
           >
-            {saveButtonText === "Save" ? (
+            {saveButtonText === "저장" ? (
               <ArrowDownTrayIcon className="h-4 w-4" />
             ) : (
               <CheckIcon className="h-4 w-4" />
@@ -5652,11 +6017,20 @@ const App: React.FC = () => {
           <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
           <button
             onClick={() => runSimulation()}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-green-600 hover:bg-green-500 text-white"
-            title="Run All Modules"
+            disabled={isRunning}
+            className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 text-white ${
+              isRunning
+                ? "bg-green-700 cursor-wait opacity-80"
+                : "bg-green-600 hover:bg-green-500"
+            }`}
+            title={isRunning ? "실행 중입니다…" : "전체 모듈 실행 (Run All)"}
           >
-            <PlayIcon className="h-4 w-4" />
-            <span>Run All</span>
+            {isRunning ? (
+              <ArrowPathIcon className="h-4 w-4 animate-spin" />
+            ) : (
+              <PlayIcon className="h-4 w-4" />
+            )}
+            <span>{isRunning ? "실행 중…" : "전체 실행"}</span>
           </button>
           <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
           <button
@@ -5689,10 +6063,10 @@ const App: React.FC = () => {
                 setIsMyWorkMenuOpen(false);
               }}
               className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200"
-              title="Samples"
+              title="예제 모음"
             >
               <BeakerIcon className="h-4 w-4" />
-              <span>Samples</span>
+              <span>예제</span>
             </button>
             <button
               onClick={() => setIsDSLModalOpen(true)}
@@ -5714,10 +6088,10 @@ const App: React.FC = () => {
                     ? "bg-purple-600 text-white"
                     : "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200"
                 }`}
-                title="My Personal Work"
+                title="내 작업"
               >
                 <FolderOpenIcon className="h-4 w-4" />
-                <span>My Work</span>
+                <span>내 작업</span>
               </button>
               {isMyWorkMenuOpen && (
                 <div
@@ -5912,11 +6286,15 @@ const App: React.FC = () => {
               <button
                 onClick={() => setIsPipelineExecutionModalOpen(true)}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 rounded-md font-semibold text-white transition-colors w-full justify-center mb-1"
-                title="Pipeline Execution"
+                title="파이프라인 실행 (Pipeline Execution)"
               >
                 <QueueListIcon className="h-4 w-4" />
-                Pipeline Execution
+                파이프라인 실행
               </button>
+              {/* 모듈 추가 방법 안내 */}
+              <p className="text-[10px] leading-snug text-gray-500 dark:text-gray-400 px-1 pb-1 mb-1 border-b border-gray-200 dark:border-gray-700">
+                아래 모듈을 클릭하거나 캔버스로 끌어다 놓으면 추가됩니다.
+              </p>
               {categorizedModules.map((category, index) => {
                 const isCollapsed = collapsedCategories.has(category.name);
                 const isShapeMenu = category.name === "도형메뉴";
@@ -6063,13 +6441,13 @@ const App: React.FC = () => {
                                         handleDragStart(e, moduleInfo.type)
                                       }
                                       className="p-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded transition-colors"
-                                      title={moduleInfo.name}
+                                      title={(moduleInfo as any).nameKo || moduleInfo.name}
                                     >
                                       <moduleInfo.icon className="h-4 w-4 text-gray-700 dark:text-gray-300" />
                                     </button>
                                     {/* Tooltip */}
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap z-50 transition-opacity">
-                                      {moduleInfo.name}
+                                      {(moduleInfo as any).nameKo || moduleInfo.name}
                                     </div>
                                   </div>
                                 );
@@ -6112,10 +6490,10 @@ const App: React.FC = () => {
                                   handleDragStart(e, moduleInfo.type)
                                 }
                                 className="flex items-center gap-2 px-3 py-1.5 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-900 dark:text-gray-200 rounded-md font-semibold transition-colors whitespace-nowrap w-full text-left"
-                                title={moduleInfo.description}
+                                title={`${(moduleInfo as any).nameKo || moduleInfo.name}\n${(moduleInfo as any).descriptionKo || moduleInfo.description}`}
                               >
                                 <moduleInfo.icon className="h-4 w-4 flex-shrink-0" />
-                                {moduleInfo.name}
+                                {(moduleInfo as any).nameKo || moduleInfo.name}
                               </button>
                             );
                           })
@@ -6154,6 +6532,7 @@ const App: React.FC = () => {
             onDeleteModule={(id) => deleteModules([id])}
             onUpdateModuleName={updateModuleName}
             onUpdateModuleParameters={updateModuleParameters}
+            onConnectionRejected={(message) => showToast(message, "warning", { durationMs: 4500 })}
           />
           <div
             onMouseDown={handleControlsMouseDown}
@@ -6244,6 +6623,13 @@ const App: React.FC = () => {
             lastSelectedModule
               ? terminalOutputs[lastSelectedModule.id] || []
               : []
+          }
+          productName={productName}
+          policyInfoModule={
+            modules.find((m) => m.type === ModuleType.DefinePolicyInfo) ?? null
+          }
+          onApplyModuleDSL={(id, params) =>
+            updateModuleParameters(id, params, false)
           }
         />
         </div>

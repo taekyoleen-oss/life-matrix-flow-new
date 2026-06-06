@@ -12,6 +12,8 @@
     "preview": "vite preview --host 0.0.0.0 --port ${PORT:-4173}",
     "server": "node server/split-data-server.js",
     "start": "NODE_ENV=production node server/split-data-server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "check-sqlite3": "node scripts/check-sqlite3.js",
     "build-sqlite3": "node scripts/auto-build-sqlite3.js",
     "postinstall": "node scripts/auto-build-sqlite3.js || echo 'better-sqlite3 자동 빌드 실패. 수동 빌드: pnpm approve-builds better-sqlite3'"
@@ -40,6 +42,7 @@
     "baseline-browser-mapping": "^2.10.0",
     "concurrently": "^9.2.1",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "vite": "^6.2.0",
+    "vitest": "^4.1.8"
   }
 }
