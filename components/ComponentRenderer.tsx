@@ -6,9 +6,11 @@ import { TOOLBOX_MODULES } from '../constants';
 import { ModuleOutputSummary } from './ModuleOutputSummary';
 import { ModuleInputSummary } from './ModuleInputSummary';
 import { useTheme } from '../contexts/ThemeContext';
+import { getPortHighlight, PortHighlight } from '../utils/portHighlight';
 
 interface PortComponentProps {
   port: Port; isInput: boolean; moduleId: string;
+  highlight?: PortHighlight;
   portRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   onStartConnection: (moduleId: string, portName: string, clientX: number, clientY: number, isInput: boolean) => void;
   onEndConnection: (moduleId: string, portName: string, isInput: boolean) => void;
@@ -76,7 +78,7 @@ const getSpecialModuleStatusColors = (theme: 'light' | 'dark') => ({
     [ModuleStatus.Error]: theme === 'light' ? 'bg-red-100 border-red-500' : 'bg-red-900/50 border-red-500',
 });
 
-const PortComponent: React.FC<PortComponentProps> = ({ port, isInput, moduleId, portRefs, onStartConnection, onEndConnection, isTappedSource, onTapPort, style }) => {
+const PortComponent: React.FC<PortComponentProps> = ({ port, isInput, moduleId, portRefs, onStartConnection, onEndConnection, isTappedSource, onTapPort, style, highlight }) => {
     const { theme } = useTheme();
     const handleMouseDown = (e: MouseEvent) => { e.stopPropagation(); onStartConnection(moduleId, port.name, e.clientX, e.clientY, isInput); };
     const handleMouseUp = (e: MouseEvent) => { e.stopPropagation(); onEndConnection(moduleId, port.name, isInput); };
@@ -88,11 +90,21 @@ const PortComponent: React.FC<PortComponentProps> = ({ port, isInput, moduleId, 
         <div 
              ref={el => { const key = `${moduleId}-${port.name}-${isInput ? 'in' : 'out'}`; if (el) portRefs.current.set(key, el); else portRefs.current.delete(key); }}
              style={style}
-             className={`w-4 h-4 rounded-full border-2 cursor-pointer z-10 ${isTappedSource ? 'bg-purple-500 border-purple-400 ring-2 ring-purple-300' : theme === 'light' ? 'bg-gray-400 border-gray-500 hover:bg-blue-500' : 'bg-gray-600 border-gray-400 hover:bg-blue-500'}`}
+             className={`w-4 h-4 rounded-full border-2 cursor-pointer z-10 transition-all ${
+               isTappedSource
+                 ? 'bg-purple-500 border-purple-400 ring-2 ring-purple-300'
+                 : highlight === 'compatible'
+                 ? 'bg-green-500 border-green-300 ring-2 ring-green-400 scale-125'
+                 : highlight === 'incompatible'
+                 ? `opacity-30 ${theme === 'light' ? 'bg-gray-300 border-gray-400' : 'bg-gray-700 border-gray-600'}`
+                 : theme === 'light'
+                 ? 'bg-gray-400 border-gray-500 hover:bg-blue-500'
+                 : 'bg-gray-600 border-gray-400 hover:bg-blue-500'
+             }`}
              onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}
              onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
              onClick={handleClick}
-             title={port.name}
+             title={highlight === 'incompatible' ? `${port.name} — 호환되지 않는 포트 타입` : port.name}
         />
     );
 };
@@ -124,6 +136,23 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
   const lastTapRef = useRef(0);
   const moduleInfo = TOOLBOX_MODULES.find(m => m.type === module.type);
   const [pendingDelete, setPendingDelete] = useState(false);
+
+  // 연결 드래그/탭 중인 소스 포트(사전 호환성 하이라이트용). 드래그가 우선, 없으면 탭 소스(항상 출력).
+  const activeSourcePort = (() => {
+    if (dragConnection) {
+      const sm = allModules.find(m => m.id === dragConnection.from.moduleId);
+      const sp = dragConnection.from.isInput
+        ? sm?.inputs.find(p => p.name === dragConnection.from.portName)
+        : sm?.outputs.find(p => p.name === dragConnection.from.portName);
+      if (sm && sp) return { moduleId: sm.id, isInput: dragConnection.from.isInput, type: sp.type as string };
+    }
+    if (tappedSourcePort) {
+      const sm = allModules.find(m => m.id === tappedSourcePort.moduleId);
+      const sp = sm?.outputs.find(p => p.name === tappedSourcePort.portName);
+      if (sm && sp) return { moduleId: sm.id, isInput: false, type: sp.type as string };
+    }
+    return null;
+  })();
 
   const handleDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); setPendingDelete(true); };
   const handleConfirmDelete = (e: MouseEvent | TouchEvent) => { e.stopPropagation(); onDelete(module.id); };
@@ -510,11 +539,12 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
                     
                     return (
                         <div key={port.name} className="absolute left-[-9px] z-10" style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}>
-                            <PortComponent 
+                            <PortComponent
                                 port={port} isInput={true} moduleId={module.id} portRefs={portRefs}
                                 onStartConnection={onStartConnection} onEndConnection={onEndConnection}
                                 isTappedSource={tappedSourcePort?.moduleId === module.id && tappedSourcePort?.portName === port.name}
                                 onTapPort={onTapPort}
+                                highlight={getPortHighlight(activeSourcePort, module.id, port.type, true)}
                                 style={{}}
                             />
                              {/* Port Label Tooltip */}
@@ -553,11 +583,12 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
 
                     return (
                         <div key={port.name} className="absolute right-[-9px] z-10" style={{ top: `${topPercent}%`, transform: 'translateY(-50%)' }}>
-                             <PortComponent 
+                             <PortComponent
                                 port={port} isInput={false} moduleId={module.id} portRefs={portRefs}
                                 onStartConnection={onStartConnection} onEndConnection={onEndConnection}
                                 isTappedSource={tappedSourcePort?.moduleId === module.id && tappedSourcePort?.portName === port.name}
                                 onTapPort={onTapPort}
+                                highlight={getPortHighlight(activeSourcePort, module.id, port.type, false)}
                                 style={{}}
                             />
                             {/* Port Label Tooltip */}
