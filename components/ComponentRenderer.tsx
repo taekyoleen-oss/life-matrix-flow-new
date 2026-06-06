@@ -48,6 +48,26 @@ const getStatusColors = (theme: 'light' | 'dark') => ({
     [ModuleStatus.Error]: theme === 'light' ? 'bg-red-100 border-red-500' : 'bg-red-900/50 border-red-500',
 });
 
+// 노드 상태 텍스트 라벨(접근성: 색만으로 구분하지 않도록 텍스트 병기).
+const STATUS_LABELS: Record<ModuleStatus, string> = {
+    [ModuleStatus.Pending]: '대기',
+    [ModuleStatus.Running]: '실행중',
+    [ModuleStatus.Success]: '완료',
+    [ModuleStatus.Error]: '오류',
+};
+
+// 상태 칩 색상(라이트/다크). 기존 노드 배경 색 규약(완료=파랑 등)은 유지하되,
+// 칩은 텍스트 가독성을 위해 별도 대비 색을 사용.
+const getStatusChipClasses = (status: ModuleStatus, theme: 'light' | 'dark'): string => {
+    const map: Record<ModuleStatus, { light: string; dark: string }> = {
+        [ModuleStatus.Pending]: { light: 'bg-gray-200 text-gray-700', dark: 'bg-gray-700 text-gray-200' },
+        [ModuleStatus.Running]: { light: 'bg-yellow-200 text-yellow-800', dark: 'bg-yellow-700/60 text-yellow-100' },
+        [ModuleStatus.Success]: { light: 'bg-blue-200 text-blue-800', dark: 'bg-blue-700/60 text-blue-100' },
+        [ModuleStatus.Error]: { light: 'bg-red-200 text-red-800', dark: 'bg-red-700/70 text-red-100' },
+    };
+    return theme === 'light' ? map[status].light : map[status].dark;
+};
+
 // Special status colors for ScenarioRunner and PipelineExplainer (always gray when pending)
 const getSpecialModuleStatusColors = (theme: 'light' | 'dark') => ({
     [ModuleStatus.Pending]: theme === 'light' ? 'bg-gray-200/50 border-gray-400' : 'bg-gray-700/50 border-gray-500',
@@ -391,6 +411,17 @@ export const ComponentRenderer: React.FC<ModuleNodeProps> = ({
             >
                 {module.name}
             </h3>
+            {!isSpecialModule && (
+                <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold leading-none flex-shrink-0 ${getStatusChipClasses(module.status, theme)}`}
+                    title={`상태: ${STATUS_LABELS[module.status]}`}
+                >
+                    {module.status === ModuleStatus.Running && (
+                        <span className="inline-block w-1.5 h-1.5 mr-0.5 rounded-full bg-current animate-pulse align-middle" />
+                    )}
+                    {STATUS_LABELS[module.status]}
+                </span>
+            )}
          </div>
          <div className="flex items-center gap-1 flex-shrink-0">
              {isSpecialModule ? (

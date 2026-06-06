@@ -23,15 +23,40 @@ interface CanvasProps {
   onDeleteModule: (moduleId: string) => void;
   onUpdateModuleName: (id: string, newName: string) => void;
   onUpdateModuleParameters?: (id: string, params: Record<string, any>) => void;
+  /** 비호환 포트 연결을 시도해 거부되었을 때 사용자에게 안내(토스트 등). */
+  onConnectionRejected?: (message: string) => void;
 }
 
 export const Canvas: React.FC<CanvasProps> = ({ 
     modules, connections, setConnections, selectedModuleIds, setSelectedModuleIds, 
     updateModulePositions, onModuleDrop, scale, setScale, pan, setPan, 
-    canvasContainerRef, onViewDetails, onEditParameters, onRunModule, 
-    onDeleteModule, onUpdateModuleName, onUpdateModuleParameters
+    canvasContainerRef, onViewDetails, onEditParameters, onRunModule,
+    onDeleteModule, onUpdateModuleName, onUpdateModuleParameters, onConnectionRejected
 }) => {
   const { theme } = useTheme();
+
+  // 포트 타입을 사용자 친화적 한글 라벨로 변환(연결 거부 안내용).
+  const portTypeLabel = useCallback((t: string): string => {
+    const map: Record<string, string> = {
+      data: '데이터(data)',
+      premium: '보험료(premium)',
+      premium_components: '보험료 구성요소(premium_components)',
+      additional_variables: '추가 변수(additional_variables)',
+      variables: '변수(variables)',
+    };
+    return map[t] ?? t;
+  }, []);
+
+  // 비호환 연결 거부 시 공통 안내 메시지 생성 + 콜백 호출.
+  const notifyIncompatible = useCallback(
+    (fromType?: string, toType?: string) => {
+      if (!onConnectionRejected || !fromType || !toType) return;
+      onConnectionRejected(
+        `${portTypeLabel(fromType)} 출력은 ${portTypeLabel(toType)} 입력에 연결할 수 없습니다. 같은 종류의 포트끼리 연결하세요.`
+      );
+    },
+    [onConnectionRejected, portTypeLabel]
+  );
   const [dragConnection, setDragConnection] = useState<{ from: { moduleId: string, portName: string, isInput: boolean }, to: { x: number, y: number } } | null>(null);
   const [tappedSourcePort, setTappedSourcePort] = useState<{ moduleId: string; portName: string; } | null>(null);
   const portRefs = useRef(new Map<string, HTMLDivElement>());
@@ -348,6 +373,8 @@ export const Canvas: React.FC<CanvasProps> = ({
             if (fromPort && toPort && fromPort.type === toPort.type) {
                 const newConnection: Connection = { id: `conn-${Date.now()}`, from: { moduleId: toModule.id, portName: fromPort.name }, to: { moduleId: fromModule.id, portName: toPort.name } };
                 setConnections(prev => [...prev.filter(c => !(c.to.moduleId === fromModule.id && c.to.portName === toPort.name)), newConnection]);
+            } else if (fromPort && toPort && fromPort.type !== toPort.type) {
+                notifyIncompatible(fromPort.type, toPort.type);
             }
         } else if (!dragFromIsInput && dropOnIsInput) {
             const fromPort = fromModule.outputs.find(p => p.name === dragConnection.from.portName);
@@ -355,11 +382,13 @@ export const Canvas: React.FC<CanvasProps> = ({
             if (fromPort && toPort && fromPort.type === toPort.type) {
                 const newConnection: Connection = { id: `conn-${Date.now()}`, from: { moduleId: fromModule.id, portName: fromPort.name }, to: { moduleId: toModule.id, portName: toPort.name } };
                 setConnections(prev => [...prev.filter(c => !(c.to.moduleId === toModule.id && c.to.portName === toPort.name)), newConnection]);
+            } else if (fromPort && toPort && fromPort.type !== toPort.type) {
+                notifyIncompatible(fromPort.type, toPort.type);
             }
         }
     }
     setDragConnection(null);
-  }, [dragConnection, modules, setConnections]);
+  }, [dragConnection, modules, setConnections, notifyIncompatible]);
 
   const handleTapPort = useCallback((moduleId: string, portName: string, isInput: boolean) => {
     cancelDragConnection(); 
@@ -373,6 +402,8 @@ export const Canvas: React.FC<CanvasProps> = ({
             if (sourcePort && targetPort && sourcePort.type === targetPort.type) {
                 const newConnection: Connection = { id: `conn-${Date.now()}`, from: tappedSourcePort, to: { moduleId, portName } };
                 setConnections(prev => [...prev.filter(c => !(c.to.moduleId === moduleId && c.to.portName === portName)), newConnection]);
+            } else if (sourcePort && targetPort && sourcePort.type !== targetPort.type) {
+                notifyIncompatible(sourcePort.type, targetPort.type);
             }
             setTappedSourcePort(null);
         }
@@ -380,7 +411,7 @@ export const Canvas: React.FC<CanvasProps> = ({
         if (tappedSourcePort && tappedSourcePort.moduleId === moduleId && tappedSourcePort.portName === portName) setTappedSourcePort(null);
         else setTappedSourcePort({ moduleId, portName });
     }
-  }, [tappedSourcePort, modules, setConnections, cancelDragConnection]);
+  }, [tappedSourcePort, modules, setConnections, cancelDragConnection, notifyIncompatible]);
   
     const handleCanvasTouchEnd = (e: React.TouchEvent) => { if (dragConnection) cancelDragConnection(); }
     const handleConnectionDoubleClick = useCallback((connectionId: string) => { setConnections(prev => prev.filter(c => c.id !== connectionId)); }, [setConnections]);

@@ -108,8 +108,23 @@ function parsePolicyHeader(line: string): Partial<DSLModel['policyParams']> & { 
 }
 
 // ── "output = formula" 한 줄 파싱
+// 대입 '='는 비교 연산자(<=, >=, ==, !=)의 '='가 아닌 첫 번째 단일 '='로 본다.
+// (예: ReserveCalculator 의 'V[t<=m] = ...' 에서 '<=' 의 '='를 대입으로 오인하지 않도록)
+function findAssignmentEq(raw: string): number {
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] !== '=') continue;
+    const prev = raw[i - 1];
+    const next = raw[i + 1];
+    // 비교 연산자의 일부면 건너뜀: <= >= == != 의 '='
+    if (prev === '<' || prev === '>' || prev === '!' || prev === '=') continue;
+    if (next === '=') continue; // '==' 의 첫 '='
+    return i;
+  }
+  return -1;
+}
+
 function parseLine(raw: string): { output: string; formula: string } | null {
-  const eqIdx = raw.indexOf('=');
+  const eqIdx = findAssignmentEq(raw);
   if (eqIdx < 0) return null;
   const output = raw.slice(0, eqIdx).trim();
   const formula = raw.slice(eqIdx + 1).trim();
@@ -146,22 +161,41 @@ function buildSelectRiskRatesParams(lines: Array<{ output: string; formula: stri
 }
 
 function buildSelectDataParams(lines: Array<{ output: string; formula: string }>) {
+  // '// off: col' 마커(미선택 열) 분리 (round-trip 보존)
+  const offNames = lines
+    .filter((l) => l.output === '__off__')
+    .map((l) => l.formula.trim())
+    .filter(Boolean);
+  const realLines = lines.filter((l) => l.output !== '__off__');
+
+  const offSelections = offNames.map((n) => ({
+    originalName: n,
+    selected: false,
+    newName: n,
+  }));
+
   // cols = Age, Death_Rate, ... 형태 또는 output = input 형태
-  const colsLine = lines.find((l) => l.output.toLowerCase() === 'cols');
+  const colsLine = realLines.find((l) => l.output.toLowerCase() === 'cols');
   if (colsLine) {
     const names = colsLine.formula.split(',').map((s) => s.trim()).filter(Boolean);
-    const selections = names.map((n) => ({ originalName: n, selected: true, newName: n }));
-    const drSel = selections.find((s) => s.newName === 'Death_Rate');
+    const selections = [
+      ...names.map((n) => ({ originalName: n, selected: true, newName: n })),
+      ...offSelections,
+    ];
+    const drSel = selections.find((s) => s.selected && s.newName === 'Death_Rate');
     return { selections, deathRateColumn: drSel?.originalName ?? '' };
   }
   // output = input 형태로 지정된 경우
-  const selections = lines.map(({ output, formula }) => ({
-    originalName: formula,
-    selected: true,
-    newName: output,
-  }));
+  const selections = [
+    ...realLines.map(({ output, formula }) => ({
+      originalName: formula,
+      selected: true,
+      newName: output,
+    })),
+    ...offSelections,
+  ];
   // Death_Rate로 이름 변경된 열을 deathRateColumn으로 자동 감지
-  const drSel = selections.find((s) => s.newName === 'Death_Rate');
+  const drSel = selections.find((s) => s.selected && s.newName === 'Death_Rate');
   return { selections, deathRateColumn: drSel?.originalName ?? '' };
 }
 
@@ -205,15 +239,30 @@ function buildCalculateSurvivorsParams(lines: Array<{ output: string; formula: s
 
     // 일반 감소율 lx
     const match = formula.match(/\(([^)]+)\)/);
-    const decrementRates = match
+    const rawParts = match
       ? match[1].split(',').map((s) => s.trim())
       : [formula.trim()];
-    const name = nameFromOutput || decrementRates[0].replace(/_/g, ' ').trim();
-    calculations.push({
+    // method=independent|udd 토큰 분리(D-1): decrementRates 에서 제외.
+    let decrementMethod: 'udd' | 'independent' | undefined;
+    const decrementRates = rawParts.filter((part) => {
+      const mm = part.match(/^method\s*=\s*(independent|udd)$/i);
+      if (mm) {
+        decrementMethod = mm[1].toLowerCase() as 'udd' | 'independent';
+        return false;
+      }
+      return true;
+    });
+    const name = nameFromOutput || (decrementRates[0] ?? '').replace(/_/g, ' ').trim();
+    const calcEntry: any = {
       id: `surv-${calculations.length}`,
       name,
       decrementRates,
-    });
+    };
+    // 'udd'는 기본값이므로 명시 입력 시에만 저장(미지정 round-trip 안정).
+    if (decrementMethod === 'independent' || decrementMethod === 'udd') {
+      calcEntry.decrementMethod = decrementMethod;
+    }
+    calculations.push(calcEntry);
   }
   return {
     ageColumn: 'Age',
@@ -252,7 +301,9 @@ function buildNxMxParams(lines: Array<{ output: string; formula: string }>) {
   // DSL에서 인식하는 공제 옵션 (ParameterInputModal의 옵션과 동일)
   const KNOWN_DEDUCT = new Set(['0', '0.25', '0.5']);
 
-  for (const { output, formula } of lines) {
+  for (const lineEntry of lines) {
+    const { output, formula } = lineEntry;
+    const capturedRatios = (lineEntry as any).paymentRatios as any[] | undefined;
     const outLow = output.toLowerCase();
     // sum(col), cumsum_rev(col), cumsum_rev(col, deduct=X), Σ(col) 모두 지원
     const colMatch = formula.match(/\(([^)]+)\)/);
@@ -280,7 +331,11 @@ function buildNxMxParams(lines: Array<{ output: string; formula: string }>) {
         active: true,
         deductibleType,
         customDeductible,
-        paymentRatios: [{ year: 1, type: '100%', customValue: 100 }],
+        // '// ratios=' 마커가 있으면 복원, 없으면 기본값(round-trip 보존).
+        paymentRatios:
+          capturedRatios && capturedRatios.length > 0
+            ? capturedRatios
+            : [{ year: 1, type: '100%', customValue: 100 }],
       });
     }
   }
@@ -405,6 +460,17 @@ export function parseDSL(text: string): DSLModel {
     const raw = lines[i];
     const line = raw.trim();
 
+    // 섹션 내부의 '// off: col' 마커는 SelectData 미선택 열 보존용 → 특수 라인으로 캡처.
+    const offMatch = line.match(/^\/\/\s*off:\s*(.+)$/i);
+    if (offMatch && currentSection) {
+      currentSection.lines.push({
+        output: '__off__',
+        formula: offMatch[1].trim(),
+        lineNumber: i + 1,
+      });
+      continue;
+    }
+
     if (!line || line.startsWith('//') || line.startsWith('#!')) continue;
 
     // ── # 헤더: 상품명 + 정책 파라미터
@@ -435,9 +501,21 @@ export function parseDSL(text: string): DSLModel {
       const cleanLine = comment >= 0 ? line.slice(0, comment).trim() : line;
       if (!cleanLine) continue;
 
+      // 인라인 '// ratios=[...]' 마커(NxMx paymentRatios 보존) 추출.
+      const inlineComment = comment >= 0 ? line.slice(comment) : '';
+      const ratiosM = inlineComment.match(/ratios\s*=\s*(\[.*\])\s*$/i);
+
       const parsed = parseLine(cleanLine);
       if (parsed) {
-        currentSection.lines.push({ ...parsed, lineNumber: i + 1 });
+        const entry: any = { ...parsed, lineNumber: i + 1 };
+        if (ratiosM) {
+          try {
+            entry.paymentRatios = JSON.parse(ratiosM[1]);
+          } catch {
+            /* 무시: 잘못된 마커는 기본값 사용 */
+          }
+        }
+        currentSection.lines.push(entry);
       }
       currentSection.raw.push(raw);
     }
@@ -591,9 +669,18 @@ export function generateDSL(
 
   const policyMod = modules.find((m) => m.type === ModuleType.DefinePolicyInfo);
   const p = policyMod?.parameters ?? {};
-  lines.push(
-    `# ${productName} | age=${p.entryAge ?? 40} | sex=${p.gender ?? 'Male'} | pay=${p.paymentTerm ?? 20} | rate=${p.interestRate ?? 2.5}`
-  );
+  // 기본 4종(age/sex/pay/rate)은 항상 출력. term/maturity 는 의미있는 값일 때만 추가
+  // (기존 DSL 호환: 이 키가 없어도 parseDSL 은 동작한다 — round-trip 보강용 D-3).
+  let header = `# ${productName} | age=${p.entryAge ?? 40} | sex=${p.gender ?? 'Male'} | pay=${p.paymentTerm ?? 20} | rate=${p.interestRate ?? 2.5}`;
+  // policyTerm: 숫자(0 포함=종신)면 출력. '' (미지정)이면 생략.
+  if (p.policyTerm !== undefined && p.policyTerm !== null && p.policyTerm !== '') {
+    header += ` | term=${p.policyTerm}`;
+  }
+  // maturityAge: 0/미지정이 아니면 출력.
+  if (p.maturityAge !== undefined && p.maturityAge !== null && p.maturityAge !== '' && Number(p.maturityAge) !== 0) {
+    header += ` | maturity=${p.maturityAge}`;
+  }
+  lines.push(header);
   lines.push('');
 
   const order: ModuleType[] = [
@@ -701,6 +788,9 @@ export function generateDSL(
                 lines.push(`${s.newName} = ${s.originalName}`);
               else
                 lines.push(`${s.originalName} = ${s.originalName}`);
+            } else {
+              // round-trip 보존: 미선택 열을 '// off:' 마커로 남겨 reverse 시 복원한다.
+              lines.push(`// off: ${s.originalName}`);
             }
           }
         } else {
@@ -729,7 +819,15 @@ export function generateDSL(
               lines.push(`${prefix} = ${c.fixedValue}`);
             } else {
               const rates = (c.decrementRates ?? []).join(', ');
-              lines.push(`${prefix} = lx(${rates})`);
+              // 다중탈퇴 결합식(D-1): decrementMethod 가 명시되면 표기(독립곱/UDD 모두).
+              //   미지정이면 생략 → reverse 에서도 키가 생기지 않아 기본값(udd) round-trip 안정.
+              const methodSuffix =
+                c.decrementMethod === 'independent'
+                  ? ', method=independent'
+                  : c.decrementMethod === 'udd'
+                  ? ', method=udd'
+                  : '';
+              lines.push(`${prefix} = lx(${rates}${methodSuffix})`);
               lines.push(`Dx_${c.name} = ${prefix} * i_prem`);
             }
           }
@@ -761,7 +859,17 @@ export function generateDSL(
             const deductSuffix = (c.deductibleType && c.deductibleType !== '0')
               ? `, deduct=${c.deductibleType === 'custom' ? (c.customDeductible ?? 0) : c.deductibleType}`
               : '';
-            lines.push(`Mx_${mxName} = cumsum_rev(${c.baseColumn}${deductSuffix})`);
+            // round-trip 보존: 연도별 지급비율(paymentRatios)을 '// ratios=' 마커로 남긴다.
+            //   기본값([{year:1,type:'100%',customValue:100}]) 이외일 때만 출력해 잡음을 줄인다.
+            let ratiosMarker = '';
+            const pr = Array.isArray(c.paymentRatios) ? c.paymentRatios : [];
+            const isDefaultRatios =
+              pr.length === 0 ||
+              (pr.length === 1 && pr[0].year === 1 && pr[0].type === '100%');
+            if (!isDefaultRatios) {
+              ratiosMarker = `  // ratios=${JSON.stringify(pr)}`;
+            }
+            lines.push(`Mx_${mxName} = cumsum_rev(${c.baseColumn}${deductSuffix})${ratiosMarker}`);
           }
         }
         if (!par.nxCalculations?.length && !par.mxCalculations?.length) {
