@@ -6012,11 +6012,13 @@ const App: React.FC = () => {
           >
             <button
               onClick={advUnlocked ? openKeyModal : openAdvModal}
-              className={`relative p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0 ${
-                !advUnlocked ? "opacity-50" : ""
-              }`}
+              className="relative p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
             >
-              <KeyIcon className={`h-5 w-5 ${hasKey ? "text-green-500" : "text-gray-400"}`} />
+              <KeyIcon
+                className={`h-5 w-5 ${hasKey ? "text-green-500" : "text-gray-400"} ${
+                  !advUnlocked ? "opacity-40" : ""
+                }`}
+              />
               {!advUnlocked ? (
                 <LockBadge />
               ) : (
@@ -6102,10 +6104,12 @@ const App: React.FC = () => {
             >
               <button
                 onClick={openAdvModal}
-                className="relative flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 text-white bg-indigo-700 opacity-50 hover:opacity-70"
+                className="relative flex items-center px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 text-white bg-indigo-700"
               >
-                <span>📊</span>
-                <span>PPT 보고서</span>
+                <span className="flex items-center gap-2 opacity-40">
+                  <span>📊</span>
+                  <span>PPT 보고서</span>
+                </span>
                 <LockBadge />
               </button>
             </Tooltip>
@@ -6139,12 +6143,12 @@ const App: React.FC = () => {
             <button
               onClick={advUnlocked ? () => setIsAIGoalModalOpen(true) : openAdvModal}
               disabled={isGeneratingPipeline}
-              className={`relative flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${
-                !advUnlocked ? "opacity-50" : ""
-              }`}
+              className="relative flex items-center px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-purple-600 hover:bg-purple-500 disabled:cursor-not-allowed text-white"
             >
-              <SparklesIcon className="w-4 h-4" />
-              <span>{isGeneratingPipeline ? 'AI 생성 중...' : 'AI 생성'}</span>
+              <span className={`flex items-center gap-2 ${!advUnlocked ? "opacity-40" : ""}`}>
+                <SparklesIcon className="w-4 h-4" />
+                <span>{isGeneratingPipeline ? 'AI 생성 중...' : 'AI 생성'}</span>
+              </span>
               {!advUnlocked && <LockBadge />}
             </button>
           </Tooltip>
@@ -6183,12 +6187,12 @@ const App: React.FC = () => {
             >
               <button
                 onClick={advUnlocked ? () => setIsDSLModalOpen(true) : openAdvModal}
-                className={`relative flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white ${
-                  !advUnlocked ? "opacity-50" : ""
-                }`}
+                className="relative flex items-center px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white"
               >
-                <span>📝</span>
-                <span>DSL 정의</span>
+                <span className={`flex items-center gap-2 ${!advUnlocked ? "opacity-40" : ""}`}>
+                  <span>📝</span>
+                  <span>DSL 정의</span>
+                </span>
                 {!advUnlocked && <LockBadge />}
               </button>
             </Tooltip>
@@ -6238,9 +6242,7 @@ const App: React.FC = () => {
                             openAdvModal();
                           }
                     }
-                    className={`w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 ${
-                      !advUnlocked ? "opacity-50" : ""
-                    }`}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
                     title={advUnlocked ? "현재 캔버스 모델을 앱 시작 기본 화면으로 저장합니다" : "고급기능 — 잠금 해제 필요"}
                   >
                     {advUnlocked ? (
@@ -6248,7 +6250,7 @@ const App: React.FC = () => {
                     ) : (
                       <LockClosedIcon className="w-4 h-4 text-amber-500" />
                     )}
-                    <div className="flex flex-col">
+                    <div className={`flex flex-col ${!advUnlocked ? "opacity-40" : ""}`}>
                       <span className="text-green-400">초기 화면으로 설정</span>
                       <span className="text-[10px] text-gray-400">현재 모델을 앱 시작 기본값으로 저장</span>
                     </div>
@@ -6299,11 +6301,9 @@ const App: React.FC = () => {
             >
               <button
                 onClick={advUnlocked ? () => setIsCodePanelVisible((prev) => !prev) : openAdvModal}
-                className={`relative p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0 ${
-                  !advUnlocked ? "opacity-50" : ""
-                }`}
+                className="relative p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
               >
-                <CommandLineIcon className="h-4 w-4 md:h-5 md:w-5" />
+                <CommandLineIcon className={`h-4 w-4 md:h-5 md:w-5 ${!advUnlocked ? "opacity-40" : ""}`} />
                 {!advUnlocked && <LockBadge />}
               </button>
             </Tooltip>
