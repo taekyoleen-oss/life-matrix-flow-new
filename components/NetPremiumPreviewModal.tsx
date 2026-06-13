@@ -7,9 +7,9 @@ import {
   DataPreview,
 } from "../types";
 import { XCircleIcon, SparklesIcon } from "./icons";
-import { GoogleGenAI } from "@google/genai";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import { getConnectedDataSource } from "./ParameterInputModal";
+import { useApiKey } from "../contexts/ApiKeyContext";
 
 interface NetPremiumPreviewModalProps {
   module: CanvasModule;
@@ -35,6 +35,7 @@ export const NetPremiumPreviewModal: React.FC<NetPremiumPreviewModalProps> = ({
 }) => {
   const [isInterpreting, setIsInterpreting] = useState(false);
   const [aiInterpretation, setAiInterpretation] = useState<string | null>(null);
+  const { ensureClient } = useApiKey();
 
   const output = module.outputData as NetPremiumOutput | GrossPremiumOutput;
   if (
@@ -150,10 +151,11 @@ export const NetPremiumPreviewModal: React.FC<NetPremiumPreviewModalProps> = ({
   }, [allModules, allConnections, module.id, isNet]);
 
   const handleInterpret = async () => {
+    const ai = ensureClient();
+    if (!ai) return; // 키 없음 → 키 입력 모달이 열림
     setIsInterpreting(true);
     setAiInterpretation(null);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
       const prompt = `
 You are an actuary explaining a premium calculation result to a product manager for a project named "${projectName}". Use Korean and simple Markdown.
 

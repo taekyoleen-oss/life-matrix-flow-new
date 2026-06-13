@@ -90,6 +90,29 @@ export const SparklesIcon: React.FC<IconProps> = ({ className = '', width = 24, 
   </svg>
 );
 
+// Key Icon
+export const KeyIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
+  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H9v1.5H7.5v1.5H4.5a1.125 1.125 0 0 1-1.125-1.125v-2.69c0-.298.119-.585.33-.796l5.317-5.317c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25z" />
+  </svg>
+);
+
+// Lock Closed Icon
+export const LockClosedIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
+  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+  </svg>
+);
+
+// Lock Open Icon
+export const LockOpenIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
+  <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V7a4 4 0 0 1 7.874-1" />
+  </svg>
+);
+
 // Check Icon
 export const CheckIcon: React.FC<IconProps> = ({ className = '', width = 24, height = 24 }) => (
   <svg className={className} width={width} height={height} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
