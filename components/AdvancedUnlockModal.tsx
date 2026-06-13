@@ -72,9 +72,9 @@ export const AdvancedUnlockModal: React.FC<AdvancedUnlockModalProps> = ({
         <main className="p-5 space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
             고급기능(<strong>DSL 정의 · AI 생성 · AI 키 설정 · 슬라이드(PPT) 보고서 ·
-            코드/터미널 패널 · 초기 화면 설정</strong>)을 사용하려면 비밀번호가
-            필요합니다. 일반 사용자는 비밀번호 없이도 모듈 배치 · 연결 · 파라미터
-            입력 · <strong>전체 실행</strong> · 결과 확인을 모두 사용할 수 있습니다.
+            초기 화면 설정</strong>)을 사용하려면 비밀번호가 필요합니다. 일반
+            사용자는 비밀번호 없이도 모듈 배치 · 연결 · 파라미터 입력 ·
+            <strong>전체 실행</strong> · 결과 확인을 모두 사용할 수 있습니다.
           </p>
 
           {isUnlocked ? (
