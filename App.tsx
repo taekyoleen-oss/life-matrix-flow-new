@@ -5467,7 +5467,7 @@ const App: React.FC = () => {
         if (failedModuleInQueue) {
           const errorMsg = `Pipeline execution failed at module: ${failedModuleInQueue.name}`;
           console.error(errorMsg);
-          if (advUnlocked) setIsCodePanelVisible(true);
+          setIsCodePanelVisible(true);
           setSelectedModuleIds([failedModuleInQueue.id]);
           // 실패 노드가 화면 밖일 수 있으므로 중앙으로 이동.
           centerOnModule(failedModuleInQueue.id);
@@ -5479,7 +5479,7 @@ const App: React.FC = () => {
               durationMs: 8000,
               actionLabel: "원인 보기",
               onAction: () => {
-                if (advUnlocked) setIsCodePanelVisible(true);
+                setIsCodePanelVisible(true);
                 setSelectedModuleIds([failedModuleInQueue.id]);
                 centerOnModule(failedModuleInQueue.id);
               },
@@ -5556,7 +5556,6 @@ const App: React.FC = () => {
       getTopologicalSort,
       showToast,
       centerOnModule,
-      advUnlocked,
     ]
   );
 
@@ -6292,21 +6291,13 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="flex items-center gap-1 md:gap-2 ml-auto">
-            <Tooltip
-              content={featureTip(
-                "코드 · 터미널 패널",
-                "각 모듈의 산출 코드와 실행 로그(터미널)를 보고 편집합니다.",
-                !advUnlocked
-              )}
+            <button
+              onClick={() => setIsCodePanelVisible((prev) => !prev)}
+              className="p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
+              title="코드 · 터미널 패널 열기/닫기"
             >
-              <button
-                onClick={advUnlocked ? () => setIsCodePanelVisible((prev) => !prev) : openAdvModal}
-                className="relative p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
-              >
-                <CommandLineIcon className={`h-4 w-4 md:h-5 md:w-5 ${!advUnlocked ? "opacity-40" : ""}`} />
-                {!advUnlocked && <LockBadge />}
-              </button>
-            </Tooltip>
+              <CommandLineIcon className="h-4 w-4 md:h-5 md:w-5" />
+            </button>
           </div>
         </div>
       </header>
