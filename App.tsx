@@ -49,9 +49,14 @@ import {
   MoonIcon,
   ArrowDownTrayIcon,
   ArrowPathIcon,
+  KeyIcon,
+  LockClosedIcon,
+  LockOpenIcon,
 } from "./components/icons";
 import useHistoryState from "./hooks/useHistoryState";
 import { useTheme } from "./contexts/ThemeContext";
+import { useApiKey } from "./contexts/ApiKeyContext";
+import { useAdvancedAccess } from "./contexts/AdvancedAccessContext";
 import { DataPreviewModal } from "./components/DataPreviewModal";
 import { ParameterInputModal } from "./components/ParameterInputModal";
 import { SAMPLE_DATA } from "./sampleData";
@@ -82,7 +87,6 @@ import { SlideReportButton } from "./components/SlideReportButton";
 import { loadModuleDefault } from "./utils/moduleDefaults";
 import { buildPipelineFromModel } from "./utils/pipelineBuilder";
 import { generateDSL } from "./utils/dslParser";
-import { GoogleGenAI } from "@google/genai";
 import { AIPipelineFromGoalModal } from "./components/AIPipelineFromGoalModal";
 import { AIPlanDisplayModal } from "./components/AIPlanDisplayModal";
 import { parseMarkdownModel } from "./utils/markdownModelParser";
@@ -666,6 +670,11 @@ function applyColumnNameChanges(
 
 const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const { ensureClient, hasKey, openKeyModal } = useApiKey();
+  const {
+    isUnlocked: advUnlocked,
+    openUnlockModal: openAdvModal,
+  } = useAdvancedAccess();
   // Shared samples (from files, shared across all users)
   const [sharedSamples, setSharedSamples] = useState<SampleData[]>([]);
   
@@ -1893,9 +1902,10 @@ const App: React.FC = () => {
 
   const handleGeneratePipelineFromGoal = async (goal: string) => {
     setIsAIGoalModalOpen(false);
+    const ai = ensureClient();
+    if (!ai) return; // 키 없음 → 키 입력 모달이 열림
     setIsGeneratingPipeline(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
       const prompt = buildPipelineGenerationPrompt(goal);
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
@@ -5437,7 +5447,7 @@ const App: React.FC = () => {
         if (failedModuleInQueue) {
           const errorMsg = `Pipeline execution failed at module: ${failedModuleInQueue.name}`;
           console.error(errorMsg);
-          setIsCodePanelVisible(true);
+          if (advUnlocked) setIsCodePanelVisible(true);
           setSelectedModuleIds([failedModuleInQueue.id]);
           // 실패 노드가 화면 밖일 수 있으므로 중앙으로 이동.
           centerOnModule(failedModuleInQueue.id);
@@ -5449,7 +5459,7 @@ const App: React.FC = () => {
               durationMs: 8000,
               actionLabel: "원인 보기",
               onAction: () => {
-                setIsCodePanelVisible(true);
+                if (advUnlocked) setIsCodePanelVisible(true);
                 setSelectedModuleIds([failedModuleInQueue.id]);
                 centerOnModule(failedModuleInQueue.id);
               },
@@ -5526,6 +5536,7 @@ const App: React.FC = () => {
       getTopologicalSort,
       showToast,
       centerOnModule,
+      advUnlocked,
     ]
   );
 
@@ -5940,6 +5951,27 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
+          {/* 우측 상단: 고급기능 잠금/해제 토글 — 다른 버튼과 확실히 차별화 */}
+          <button
+            onClick={openAdvModal}
+            className={`group flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-bold tracking-wide transition-all flex-shrink-0 text-white shadow-md hover:shadow-lg hover:-translate-y-px ring-1 ${
+              advUnlocked
+                ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-emerald-500/30 ring-emerald-300/60"
+                : "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-orange-500/40 ring-amber-300/70"
+            }`}
+            title={
+              advUnlocked
+                ? "고급 모드 활성화됨 — 클릭하여 잠금 관리"
+                : "고급기능 실행 (비밀번호 필요)"
+            }
+          >
+            {advUnlocked ? (
+              <LockOpenIcon className="h-4 w-4" />
+            ) : (
+              <LockClosedIcon className="h-4 w-4 group-hover:scale-110 transition-transform" />
+            )}
+            <span>{advUnlocked ? "고급 모드 ON" : "고급기능 실행"}</span>
+          </button>
         </div>
 
         {/* 두 번째 줄: 테마, Undo/Redo, Set Folder, Load, Save, Run All */}
@@ -5950,6 +5982,32 @@ const App: React.FC = () => {
             title="시작 가이드 (산출 4단계 안내)"
           >
             <SparklesIcon className="h-5 w-5 text-blue-500" />
+          </button>
+          <button
+            onClick={advUnlocked ? openKeyModal : openAdvModal}
+            className={`relative p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0 ${
+              !advUnlocked ? "opacity-50" : ""
+            }`}
+            title={
+              !advUnlocked
+                ? "고급기능 — 잠금 해제 필요 (AI 키 설정)"
+                : hasKey
+                ? "AI 키 설정 (키 저장됨)"
+                : "AI 키 설정 (키 미입력 — AI 기능 사용 불가)"
+            }
+          >
+            <KeyIcon className={`h-5 w-5 ${hasKey ? "text-green-500" : "text-gray-400"}`} />
+            {!advUnlocked ? (
+              <span className="absolute -top-1 -right-1 bg-gray-500 text-white rounded-full p-0.5 ring-1 ring-white dark:ring-gray-900">
+                <LockClosedIcon className="h-2.5 w-2.5" />
+              </span>
+            ) : (
+              <span
+                className={`absolute top-1 right-1 block h-2 w-2 rounded-full ring-1 ring-white dark:ring-gray-900 ${
+                  hasKey ? "bg-green-500" : "bg-red-500"
+                }`}
+              />
+            )}
           </button>
           <button
             onClick={toggleTheme}
@@ -6013,7 +6071,18 @@ const App: React.FC = () => {
             <span>{saveButtonText}</span>
           </button>
           <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
-          <SlideReportButton productName={productName} modules={modules} />
+          {advUnlocked ? (
+            <SlideReportButton productName={productName} modules={modules} />
+          ) : (
+            <button
+              onClick={openAdvModal}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 text-white bg-indigo-700 opacity-50 hover:opacity-70"
+              title="고급기능 — 잠금 해제 필요 (PPT 보고서)"
+            >
+              <LockClosedIcon className="h-4 w-4" />
+              <span>PPT 보고서</span>
+            </button>
+          )}
           <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
           <button
             onClick={() => runSimulation()}
@@ -6034,12 +6103,18 @@ const App: React.FC = () => {
           </button>
           <div className="h-5 border-l border-gray-300 dark:border-gray-700"></div>
           <button
-            onClick={() => setIsAIGoalModalOpen(true)}
+            onClick={advUnlocked ? () => setIsAIGoalModalOpen(true) : openAdvModal}
             disabled={isGeneratingPipeline}
-            title="AI로 파이프라인 생성"
-            className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+            title={advUnlocked ? "AI로 파이프라인 생성" : "고급기능 — 잠금 해제 필요 (AI 생성)"}
+            className={`relative flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white ${
+              !advUnlocked ? "opacity-50" : ""
+            }`}
           >
-            <SparklesIcon className="w-4 h-4" />
+            {advUnlocked ? (
+              <SparklesIcon className="w-4 h-4" />
+            ) : (
+              <LockClosedIcon className="w-4 h-4" />
+            )}
             <span>{isGeneratingPipeline ? 'AI 생성 중...' : 'AI 생성'}</span>
           </button>
         </div>
@@ -6069,11 +6144,17 @@ const App: React.FC = () => {
               <span>예제</span>
             </button>
             <button
-              onClick={() => setIsDSLModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white"
-              title="출력=수식 형태로 파이프라인 전체 정의"
+              onClick={advUnlocked ? () => setIsDSLModalOpen(true) : openAdvModal}
+              className={`flex items-center gap-2 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white ${
+                !advUnlocked ? "opacity-50" : ""
+              }`}
+              title={advUnlocked ? "출력=수식 형태로 파이프라인 전체 정의" : "고급기능 — 잠금 해제 필요 (DSL 정의)"}
             >
-              <span>📝</span>
+              {advUnlocked ? (
+                <span>📝</span>
+              ) : (
+                <LockClosedIcon className="h-4 w-4" />
+              )}
               <span>DSL 정의</span>
             </button>
             <div className="relative flex-shrink-0" style={{ zIndex: 1000 }}>
@@ -6114,11 +6195,24 @@ const App: React.FC = () => {
                     <span>현재 모델 저장</span>
                   </button>
                   <button
-                    onClick={handleSetAsInitial}
-                    className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
-                    title="현재 캔버스 모델을 앱 시작 기본 화면으로 저장합니다"
+                    onClick={
+                      advUnlocked
+                        ? handleSetAsInitial
+                        : () => {
+                            setIsMyWorkMenuOpen(false);
+                            openAdvModal();
+                          }
+                    }
+                    className={`w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 ${
+                      !advUnlocked ? "opacity-50" : ""
+                    }`}
+                    title={advUnlocked ? "현재 캔버스 모델을 앱 시작 기본 화면으로 저장합니다" : "고급기능 — 잠금 해제 필요"}
                   >
-                    <SparklesIcon className="w-4 h-4 text-yellow-400" />
+                    {advUnlocked ? (
+                      <SparklesIcon className="w-4 h-4 text-yellow-400" />
+                    ) : (
+                      <LockClosedIcon className="w-4 h-4 text-gray-400" />
+                    )}
                     <div className="flex flex-col">
                       <span className="text-green-400">초기 화면으로 설정</span>
                       <span className="text-[10px] text-gray-400">현재 모델을 앱 시작 기본값으로 저장</span>
@@ -6162,11 +6256,18 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-1 md:gap-2 ml-auto">
             <button
-              onClick={() => setIsCodePanelVisible((prev) => !prev)}
-              className="p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0"
-              title="Toggle Code & Terminal Panel"
+              onClick={advUnlocked ? () => setIsCodePanelVisible((prev) => !prev) : openAdvModal}
+              className={`relative p-1.5 md:p-1.5 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors flex-shrink-0 ${
+                !advUnlocked ? "opacity-50" : ""
+              }`}
+              title={advUnlocked ? "Toggle Code & Terminal Panel" : "고급기능 — 잠금 해제 필요 (코드/터미널)"}
             >
               <CommandLineIcon className="h-4 w-4 md:h-5 md:w-5" />
+              {!advUnlocked && (
+                <span className="absolute -top-1 -right-1 bg-gray-500 text-white rounded-full p-0.5 ring-1 ring-white dark:ring-gray-900">
+                  <LockClosedIcon className="h-2.5 w-2.5" />
+                </span>
+              )}
             </button>
           </div>
         </div>
