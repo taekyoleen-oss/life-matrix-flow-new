@@ -5951,13 +5951,13 @@ const App: React.FC = () => {
               )}
             </div>
           </div>
-          {/* 우측 상단: 고급기능 잠금/해제 토글 */}
+          {/* 우측 상단: 고급기능 잠금/해제 토글 — 다른 버튼과 확실히 차별화 */}
           <button
             onClick={openAdvModal}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md font-semibold transition-colors flex-shrink-0 ${
+            className={`group flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg font-bold tracking-wide transition-all flex-shrink-0 text-white shadow-md hover:shadow-lg hover:-translate-y-px ring-1 ${
               advUnlocked
-                ? "bg-amber-500 hover:bg-amber-600 text-white"
-                : "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300"
+                ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 shadow-emerald-500/30 ring-emerald-300/60"
+                : "bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-orange-500/40 ring-amber-300/70"
             }`}
             title={
               advUnlocked
@@ -5968,9 +5968,9 @@ const App: React.FC = () => {
             {advUnlocked ? (
               <LockOpenIcon className="h-4 w-4" />
             ) : (
-              <LockClosedIcon className="h-4 w-4" />
+              <LockClosedIcon className="h-4 w-4 group-hover:scale-110 transition-transform" />
             )}
-            <span>{advUnlocked ? "고급 모드" : "고급기능 실행"}</span>
+            <span>{advUnlocked ? "고급 모드 ON" : "고급기능 실행"}</span>
           </button>
         </div>
 
