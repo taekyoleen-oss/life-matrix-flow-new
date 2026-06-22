@@ -16,6 +16,110 @@ import {
 import { Connection } from "../types";
 import { getConnectedDataSource } from "./ParameterInputModal";
 import { SpreadViewModal } from "./SpreadViewModal";
+import { computeDataOverview, DataOverview } from "../utils/dataOverview";
+
+/**
+ * 데이터 개요 패널 (읽기 전용·부가). 위험률표·요율표를 들여온 직후
+ * 행/열 수, 열별 추론 타입(수치형/범주형), 결측·빈값 수를 요약한다.
+ * (도메인: 연령×성별×위험 조합의 커버리지 공백을 결측으로 드러냄)
+ */
+const DataOverviewPanel: React.FC<{ overview: DataOverview }> = ({
+  overview,
+}) => {
+  const [open, setOpen] = useState(false);
+  const hasMissing = overview.columnsWithMissing.length > 0;
+
+  return (
+    <div className="flex-shrink-0 border border-gray-200 rounded-lg bg-gray-50">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+          데이터 개요
+          <span className="text-xs font-normal text-gray-500">
+            행 {overview.totalRowCount.toLocaleString()} · 열{" "}
+            {overview.columnCount}
+            {hasMissing && (
+              <span className="ml-2 text-amber-600 font-medium">
+                · 결측 열 {overview.columnsWithMissing.length}개
+              </span>
+            )}
+          </span>
+        </span>
+        {open ? (
+          <ChevronUpIcon className="w-4 h-4 text-gray-500" />
+        ) : (
+          <ChevronDownIcon className="w-4 h-4 text-gray-500" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-3">
+          {overview.totalRowCount !== overview.sampledRowCount && (
+            <p className="text-xs text-gray-500 mb-2">
+              열별 결측은 미리보기 표본{" "}
+              {overview.sampledRowCount.toLocaleString()}행 기준입니다.
+            </p>
+          )}
+          <div className="overflow-x-auto border border-gray-200 rounded-md bg-white">
+            <table className="w-full text-xs text-left">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="py-1.5 px-3 font-semibold text-gray-600">열</th>
+                  <th className="py-1.5 px-3 font-semibold text-gray-600">
+                    타입
+                  </th>
+                  <th className="py-1.5 px-3 font-semibold text-gray-600 text-right">
+                    결측/빈값
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {overview.columns.map((c) => (
+                  <tr
+                    key={c.name}
+                    className={`border-b border-gray-100 last:border-b-0 ${
+                      c.missingCount > 0 ? "bg-amber-50" : ""
+                    }`}
+                  >
+                    <td className="py-1 px-3 font-medium text-gray-700">
+                      {c.name}
+                    </td>
+                    <td className="py-1 px-3">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[11px] ${
+                          c.inferredType === "numeric"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-purple-100 text-purple-700"
+                        }`}
+                      >
+                        {c.inferredType === "numeric" ? "수치형" : "범주형"}
+                      </span>
+                    </td>
+                    <td
+                      className={`py-1 px-3 text-right font-mono ${
+                        c.missingCount > 0
+                          ? "text-amber-700 font-semibold"
+                          : "text-gray-500"
+                      }`}
+                    >
+                      {c.missingCount > 0
+                        ? `${c.missingCount.toLocaleString()} (${(
+                            c.missingRatio * 100
+                          ).toFixed(1)}%)`
+                        : "0"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface DataPreviewModalProps {
   module: CanvasModule;
@@ -636,6 +740,12 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
   const [visYAxisCol2, setVisYAxisCol2] = useState<string | null>(null);
   const [showSpreadView, setShowSpreadView] = useState(false);
 
+  // 데이터 개요 (읽기 전용·부가): 이미 로드된 미리보기 데이터에서만 계산.
+  const dataOverview = useMemo(
+    () => computeDataOverview(columns, rows, data?.totalRowCount),
+    [columns, rows, data?.totalRowCount]
+  );
+
   useEffect(() => {
     if (
       activeTab === "visualization" &&
@@ -816,6 +926,7 @@ export const DataPreviewModal: React.FC<DataPreviewModalProps> = ({
 
           {activeTab === "table" && (
             <>
+              {dataOverview && <DataOverviewPanel overview={dataOverview} />}
               <div className="flex justify-between items-center flex-shrink-0">
                 <div className="text-sm text-gray-600">
                   Showing {Math.min(rows.length, 1000)} of{" "}

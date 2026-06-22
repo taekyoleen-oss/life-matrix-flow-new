@@ -21,7 +21,15 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ModuleType } from '../../types';
 
-const src = readFileSync(join(__dirname, '../../App.tsx'), 'utf-8');
+// Phase 6 리팩터: executePipeline 계산 코어는 utils/pipelineEngine.ts 로
+// 동작 변경 없이 추출되었다(App.tsx 는 call-through). 정적 스캔 대상에 추출된
+// 엔진 소스를 포함하여 기존 불변식 검증을 그대로 유지한다.
+const appSrc = readFileSync(join(__dirname, '../../App.tsx'), 'utf-8');
+const engineSrc = readFileSync(
+  join(__dirname, '../../utils/pipelineEngine.ts'),
+  'utf-8'
+);
+const src = appSrc + '\n' + engineSrc;
 
 /** executePipeline 본문(루프 처리부) 영역을 라인으로 잘라낸다. */
 function pipelineRegion(): string {

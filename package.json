@@ -14,6 +14,7 @@
     "start": "NODE_ENV=production node server/split-data-server.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:pipelines": "vitest run --config vitest.verify.config.ts",
     "check-sqlite3": "node scripts/check-sqlite3.js",
     "build-sqlite3": "node scripts/auto-build-sqlite3.js",
     "postinstall": "node scripts/auto-build-sqlite3.js || echo 'better-sqlite3 자동 빌드 실패. 수동 빌드: pnpm approve-builds better-sqlite3'"

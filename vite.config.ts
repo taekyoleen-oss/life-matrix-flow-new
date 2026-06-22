@@ -21,6 +21,14 @@ export default defineConfig(({ mode }) => {
         headers: {
           'Cache-Control': 'no-store',
         },
+        // CORS 프록시: 원격 CSV 로더(/api/proxy-csv)를 Express 서버(3002)로 전달.
+        // 서버가 떠 있지 않으면 클라이언트가 직접 fetch 폴백을 시도한다.
+        proxy: {
+          '/api/proxy-csv': {
+            target: env.VITE_API_URL || 'http://localhost:3002',
+            changeOrigin: true,
+          },
+        },
       },
       preview: {
         host: '0.0.0.0',

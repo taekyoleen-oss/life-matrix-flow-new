@@ -81,6 +81,50 @@ app.use(express.json({ limit: '50mb' }));
 import samplesRouter from './routes/samples.js';
 app.use('/api/samples', samplesRouter);
 
+// ============================================================================
+// CORS 프록시: 원격 CSV/요율표를 브라우저 CORS 제약 없이 가져온다.
+//   GET /api/proxy-csv?url=https://example.com/standard_life_table.csv
+//   - URL 데이터 로더(ParameterInputModal LoadData)의 "URL" 소스에서 호출.
+//   - 응답 본문(텍스트)을 그대로 반환 → 클라이언트는 파일 업로드와 동일 파서 사용.
+// ============================================================================
+app.get('/api/proxy-csv', async (req, res) => {
+  const target = req.query.url;
+  if (!target || typeof target !== 'string') {
+    return res.status(400).json({ error: 'url 쿼리 파라미터가 필요합니다.' });
+  }
+  let parsed;
+  try {
+    parsed = new URL(target);
+  } catch {
+    return res.status(400).json({ error: '유효하지 않은 URL 형식입니다.' });
+  }
+  // http/https 만 허용 (SSRF 표면 축소: file:, ftp: 등 차단)
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return res.status(400).json({ error: 'http(s) URL만 허용됩니다.' });
+  }
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000); // 20초 타임아웃
+    const upstream = await fetch(target, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'life-matrix-flow-proxy' },
+    });
+    clearTimeout(timer);
+    if (!upstream.ok) {
+      return res
+        .status(502)
+        .json({ error: `원격 서버 응답 오류: ${upstream.status} ${upstream.statusText}` });
+    }
+    const text = await upstream.text();
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    return res.send(text);
+  } catch (err) {
+    const msg = err && err.name === 'AbortError' ? '원격 요청 시간 초과(20초).' : (err && err.message) || '원격 데이터를 가져오지 못했습니다.';
+    return res.status(502).json({ error: msg });
+  }
+});
+
 // 프로덕션: 빌드된 프론트엔드 정적 파일 서빙
 if (isProduction) {
   const distPath = path.join(projectRoot, 'dist');

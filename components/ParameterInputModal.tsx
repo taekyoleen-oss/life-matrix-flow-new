@@ -1714,6 +1714,80 @@ const LoadDataParams: React.FC<{
 }> = ({ parameters, onParametersChange, folderHandle }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showExcelModal, setShowExcelModal] = useState(false);
+  // URL 원격 로더 상태 (기본 소스 = 파일; URL 분기는 사용자가 선택했을 때만 활성)
+  const [sourceMode, setSourceMode] = useState<"file" | "url">("file");
+  const [urlInput, setUrlInput] = useState("");
+  const [urlLoading, setUrlLoading] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
+
+  // 원격 URL에서 CSV를 가져와 파일 업로드와 동일한 parameters 구조로 저장한다.
+  // 1) 개발 서버 프록시(/api/proxy-csv)를 우선 시도 → CORS 우회.
+  // 2) 프록시가 없거나 실패하면 브라우저 직접 fetch 폴백(서버 미사용 dev 대응).
+  const handleLoadFromUrl = async () => {
+    const url = urlInput.trim();
+    setUrlError(null);
+    if (!url) {
+      setUrlError("URL을 입력하세요.");
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      setUrlError("http:// 또는 https:// 로 시작하는 URL을 입력하세요.");
+      return;
+    }
+    setUrlLoading(true);
+    try {
+      let content: string | null = null;
+      // (1) 프록시 경유
+      try {
+        const proxyResp = await fetch(
+          `/api/proxy-csv?url=${encodeURIComponent(url)}`
+        );
+        if (proxyResp.ok) {
+          content = await proxyResp.text();
+        }
+      } catch {
+        // 프록시 불가 → 폴백으로 진행
+      }
+      // (2) 직접 fetch 폴백
+      if (content === null) {
+        try {
+          const directResp = await fetch(url);
+          if (!directResp.ok) {
+            throw new Error(`HTTP ${directResp.status} ${directResp.statusText}`);
+          }
+          content = await directResp.text();
+        } catch (e: any) {
+          throw new Error(
+            "원격 데이터를 가져오지 못했습니다. CORS 제한이거나 URL이 올바르지 않을 수 있습니다. " +
+              "개발 서버(npm run dev:with-server)를 켜면 프록시로 우회할 수 있습니다." +
+              (e?.message ? ` (${e.message})` : "")
+          );
+        }
+      }
+      if (content === null || content.trim() === "") {
+        throw new Error("가져온 데이터가 비어 있습니다.");
+      }
+      // 파일명 추정 (URL 경로 마지막 세그먼트)
+      let derivedName = url;
+      try {
+        const u = new URL(url);
+        const seg = u.pathname.split("/").filter(Boolean).pop();
+        if (seg) derivedName = seg;
+      } catch {
+        /* keep url */
+      }
+      onParametersChange({
+        source: derivedName,
+        fileContent: content,
+        fileType: "csv",
+        sourceUrl: url,
+      });
+    } catch (err: any) {
+      setUrlError(err?.message || "원격 데이터를 가져오지 못했습니다.");
+    } finally {
+      setUrlLoading(false);
+    }
+  };
 
   // 엑셀 파일을 CSV로 변환하는 함수
   const convertExcelToCSV = async (workbook: any, sheetName?: string): Promise<string> => {
@@ -1850,7 +1924,30 @@ const LoadDataParams: React.FC<{
         className="hidden"
       />
       <label className="block text-xs text-gray-400 mb-1">Source</label>
-      <div className="flex gap-2 mb-4">
+      {/* 소스 유형 선택: 파일(기본) / URL */}
+      <div className="flex gap-1 mb-2">
+        <button
+          onClick={() => setSourceMode("file")}
+          className={`px-3 py-1 text-xs rounded-md font-semibold transition-colors ${
+            sourceMode === "file"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+          }`}
+        >
+          파일
+        </button>
+        <button
+          onClick={() => setSourceMode("url")}
+          className={`px-3 py-1 text-xs rounded-md font-semibold transition-colors ${
+            sourceMode === "url"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+          }`}
+        >
+          URL
+        </button>
+      </div>
+      <div className="flex gap-2 mb-2">
         <input
           type="text"
           value={parameters.source}
@@ -1858,13 +1955,45 @@ const LoadDataParams: React.FC<{
           className="flex-grow bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs"
           placeholder="No file selected"
         />
-        <button
-          onClick={handleBrowseClick}
-          className="px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 rounded-md font-semibold"
-        >
-          Browse...
-        </button>
+        {sourceMode === "file" && (
+          <button
+            onClick={handleBrowseClick}
+            className="px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 rounded-md font-semibold"
+          >
+            Browse...
+          </button>
+        )}
       </div>
+      {/* URL 원격 로더 (URL 모드에서만 표시) */}
+      {sourceMode === "url" && (
+        <div className="mb-4">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !urlLoading) handleLoadFromUrl();
+              }}
+              placeholder="https://example.com/standard_life_table.csv"
+              className="flex-grow bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs"
+            />
+            <button
+              onClick={handleLoadFromUrl}
+              disabled={urlLoading}
+              className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-md font-semibold whitespace-nowrap"
+            >
+              {urlLoading ? "불러오는 중..." : "URL 불러오기"}
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-gray-500">
+            표준생명표·요율표 CSV의 URL을 입력하세요. 개발 서버가 켜져 있으면 프록시로 CORS를 우회합니다.
+          </p>
+          {urlError && (
+            <p className="mt-1 text-[11px] text-red-400">{urlError}</p>
+          )}
+        </div>
+      )}
       {/* 파일 타입 표시 */}
       {parameters.fileType === "excel" && parameters.sheetName && (
         <div className="mb-2 text-xs text-gray-500">

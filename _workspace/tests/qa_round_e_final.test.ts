@@ -19,7 +19,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const src = readFileSync(join(__dirname, '../../App.tsx'), 'utf-8');
+// Phase 6 리팩터: 계산 엔진은 utils/pipelineEngine.ts 로 동작 변경 없이 추출됨.
+// 정적 스캔 대상에 추출 모듈을 합쳐 기존 엔진 불변식 검증을 유지한다.
+const src =
+  readFileSync(join(__dirname, '../../App.tsx'), 'utf-8') +
+  '\n' +
+  readFileSync(join(__dirname, '../../utils/pipelineEngine.ts'), 'utf-8');
 
 // ── C-2: 미지원 타입 throw 의 *행동* 재현 ──────────────────────────────
 // 엔진 if-체인을 단순화한 라우터로, "분기 없는 가짜 타입"이 진짜 throw 되는지 확인.

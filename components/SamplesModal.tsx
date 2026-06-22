@@ -23,6 +23,13 @@ interface Sample {
   category?: string;
   appSection?: string;
   developerEmail?: string;
+  // 강화된 샘플 메타데이터 (선택, 후방호환 — 있을 때만 표시)
+  tags?: string[];
+  dataFile?: string;
+  expectedOutput?: string;
+  insuranceType?: string; // 종신/정기/양로
+  actuarialBasis?: string; // 위험률·이율 등 계리기초
+  expectedPremium?: string;
 }
 
 interface SamplesModalProps {
@@ -39,6 +46,13 @@ interface SamplesModalProps {
     category?: string;
     appSection?: string;
     developerEmail?: string;
+    // 강화된 샘플 메타데이터 (선택, 후방호환)
+    tags?: string[];
+    dataFile?: string;
+    expectedOutput?: string;
+    insuranceType?: string;
+    actuarialBasis?: string;
+    expectedPremium?: string;
   }>;
   onLoadSample: (
     sampleName: string,
@@ -583,6 +597,70 @@ const SamplesModal: React.FC<SamplesModalProps> = ({
                         {sample.description || "설명 없음"}
                       </p>
                     </div>
+
+                    {/* 강화된 메타데이터 — 있을 때만 추가 표시 (없으면 기존 레이아웃 동일) */}
+                    {sample.insuranceType && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
+                          보험종류:{" "}
+                        </span>
+                        <span className="text-gray-900 dark:text-white text-sm">
+                          {sample.insuranceType}
+                        </span>
+                      </div>
+                    )}
+                    {sample.actuarialBasis && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
+                          계리기초:{" "}
+                        </span>
+                        <span className="text-gray-900 dark:text-white text-sm">
+                          {sample.actuarialBasis}
+                        </span>
+                      </div>
+                    )}
+                    {sample.expectedPremium && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
+                          기대 보험료:{" "}
+                        </span>
+                        <span className="text-gray-900 dark:text-white text-sm">
+                          {sample.expectedPremium}
+                        </span>
+                      </div>
+                    )}
+                    {sample.expectedOutput && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
+                          기대 출력:{" "}
+                        </span>
+                        <span className="text-gray-900 dark:text-white text-sm">
+                          {sample.expectedOutput}
+                        </span>
+                      </div>
+                    )}
+                    {sample.dataFile && (
+                      <div>
+                        <span className="text-gray-600 dark:text-gray-400 text-sm font-medium">
+                          데이터 파일:{" "}
+                        </span>
+                        <span className="text-gray-900 dark:text-white text-sm">
+                          {sample.dataFile}
+                        </span>
+                      </div>
+                    )}
+                    {sample.tags && sample.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {sample.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-0.5 bg-purple-600/20 text-purple-700 dark:text-purple-300 rounded text-xs"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* 실행 버튼 */}

@@ -14,6 +14,16 @@ export const getModuleCode = (module: CanvasModule): string => {
 
   switch (type) {
     case ModuleType.LoadData:
+      // URL 소스인 경우에만 원격 로드 의사코드를 추가로 표기(파일 소스는 변경 없음).
+      if (parameters.sourceUrl) {
+        return `# Load Data (from URL)
+import pandas as pd
+
+# Remote data source (e.g. standard life table / rate table)
+url = "${parameters.sourceUrl}"
+df = pd.read_csv(url)
+# print(df.head())`;
+      }
       return `# Load Data
 import pandas as pd
 import io
