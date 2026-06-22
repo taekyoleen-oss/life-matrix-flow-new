@@ -80,3 +80,26 @@ life matrix flow new는 ML Auto Flow와 **동일한 캔버스 패턴**을 공유
 | 5 | 1-6 재계산 함수 내보내기 | 중 | 기존 내보내기 보강 |
 
 > **불변식(TS 결정성):** 무작위·부동소수 연산 순서 고정으로 2회 실행 byte-identical 출력. DSL 양방향 동기화(`dslParser.ts`/`moduleSync.ts`)와 모듈 파라미터 정합 유지. sklearn/Pyodide 재현성 개념은 미적용.
+
+
+---
+
+## 부록: 구현 결과 (2026-06-22)
+
+> life matrix flow new는 **독자 범위(I/O·검증·책자)** 항목을 모두 구현 완료했습니다. sklearn 계열은 해당 없음(순수 TS).
+
+### 항목별 구현 상태
+| 항목 | 상태 | 비고 |
+|---|---|---|
+| 1-1 데이터 개요 패널 | ✅ | utils/dataOverview.ts + DataPreviewModal |
+| 1-2 URL 로더(TS fetch) | ✅ | 파일/URL 토글 + /api/proxy-csv 폴백 |
+| 1-3 레퍼런스 샘플 3종(.lifx) | ✅ | 정기·종신·양로 |
+| 1-4 샘플 메타 스키마 강화 | ✅ | insuranceType/actuarialBasis/expectedPremium 등 |
+| 1-5 TS 재현성 verify 하네스 | ✅ | utils/pipelineEngine.ts 추출(동작 보존) + verify/pipelines.repro.test.ts |
+| 1-6 보험료 재계산 함수 내보내기 | ✅ | utils/recomputeExport.ts(고급기능 게이트) |
+| 2-1/2-2/3-1/3-4/3-5 (sklearn 계열) | — 해당 없음 | 순수 TS, 보험계리 공식 기반 |
+| 3-7 재학습 | △ 부분 | ScenarioRunner 시나리오 재실행으로 대체(기존) |
+
+### 검증
+- `npm run verify:pipelines` → **5/5 PASS** (보험료/준비금 2회 실행 동일성). 기존 테스트 110/110 PASS.
+- `vite build` 성공. executePipeline 코어 추출은 동작 보존(call-through), 모듈 계산 로직 불변.
