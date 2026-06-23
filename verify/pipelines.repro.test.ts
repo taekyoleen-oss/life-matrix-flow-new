@@ -45,6 +45,7 @@ interface LifxFile {
 const FIXTURES = [
   "Reference_WholeLife_WithReserves.lifx",
   "Reference_TermLife_StandardRates.lifx",
+  "Reference_TermLife_Age45.lifx",
   "Reference_Endowment_Scenario.lifx",
   "Whole Life.lifx",
 ];
