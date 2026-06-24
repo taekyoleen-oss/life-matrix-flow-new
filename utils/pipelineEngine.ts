@@ -25,6 +25,7 @@ import {
   GrossPremiumOutput,
 } from "../types";
 import { DEFAULT_MODULES } from "../constants";
+import { resolveDatasetContent } from "./datasetRegistry";
 
 export const roundTo5 = (num: number): number => {
   return Number(num.toFixed(5));
@@ -291,7 +292,35 @@ export const executePipelineCore =
 
       try {
         if (module.type === ModuleType.LoadData) {
-          const fileContent = module.parameters.fileContent as string;
+          let fileContent = module.parameters.fileContent as string;
+          // 데이터 자동 해석 폴백: 본문이 없고 파일명(source)만 있으면
+          // datasetRegistry(예제/웹)에서 CSV 본문을 해석해 자동 주입한다.
+          // (본문이 동봉된 기존 동작·verify 픽스처는 이 분기를 타지 않아 불변)
+          if (!fileContent) {
+            const src = String(module.parameters.source || "").trim();
+            if (src) {
+              logFn(
+                moduleId,
+                `데이터 본문이 없어 '${src}'를 데이터셋(예제/웹)에서 불러옵니다…`
+              );
+              const resolved = await resolveDatasetContent(src);
+              if (resolved) {
+                fileContent = resolved;
+                const isExcel = /\.xlsx?$/i.test(src);
+                module.parameters = {
+                  ...module.parameters,
+                  fileContent: resolved,
+                  fileType: isExcel ? "excel" : "csv",
+                  sourceType: "file",
+                };
+                const fbIdx = currentModules.findIndex(
+                  (m) => m.id === moduleId
+                );
+                if (fbIdx !== -1) currentModules[fbIdx] = module;
+                logFn(moduleId, `'${src}' 데이터를 불러왔습니다.`);
+              }
+            }
+          }
           if (!fileContent) throw new Error("No file content loaded.");
           const lines = fileContent.trim().split("\n");
           if (lines.length < 1)

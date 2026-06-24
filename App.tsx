@@ -3202,6 +3202,9 @@ const App: React.FC = () => {
           e.preventDefault();
           setSelectedModuleIds(modules.map((m) => m.id));
         } else if (e.key === "c") {
+          // 텍스트가 선택돼 있으면 브라우저 기본 복사를 허용(코드/로그 복사 가능)
+          const s = window.getSelection();
+          if (s && s.toString().trim()) return;
           if (selectedModuleIds.length > 0) {
             e.preventDefault();
             pasteOffset.current = 0;
@@ -3254,6 +3257,9 @@ const App: React.FC = () => {
           }
         } else if (e.key === "x") {
           // Cut (copy and delete)
+          // 텍스트가 선택돼 있으면 브라우저 기본 잘라내기를 허용
+          const s = window.getSelection();
+          if (s && s.toString().trim()) return;
           if (selectedModuleIds.length > 0) {
             e.preventDefault();
             pasteOffset.current = 0;

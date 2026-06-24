@@ -23,6 +23,8 @@ import { ExcelInputModal } from "./ExcelInputModal";
 import { generateDSL, extractModuleSection } from "../utils/dslParser";
 import { inferUpstreamColumns } from "../utils/schemaInference";
 import { useTheme } from "../contexts/ThemeContext";
+import { useAdvancedAccess } from "../contexts/AdvancedAccessContext";
+import { MODULE_HELP, DEFAULT_MODULE_HELP } from "./moduleHelp";
 
 // Dynamic import for xlsx to handle module resolution issues
 let XLSX: any = null;
@@ -88,7 +90,7 @@ export const PropertyInput: React.FC<{
         compact ? "px-2 py-1 text-xs" : "px-2 py-1.5 text-xs"
       } focus:outline-none focus:ring-2 focus:ring-blue-500 ${
         isDark
-          ? "bg-gray-700 border-gray-600 text-white disabled:bg-gray-800 disabled:text-gray-500"
+          ? "bg-gray-700 border-gray-600 text-white disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500"
           : "bg-white border-gray-300 text-gray-900 disabled:bg-gray-100 disabled:text-gray-400"
       }`}
     />
@@ -380,7 +382,7 @@ export const DefinePolicyInfoParams: React.FC<{
     `px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
       activeTab === tab
         ? "bg-blue-600 text-white"
-        : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+        : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-600"
     }`;
 
   return (
@@ -474,13 +476,13 @@ export const DefinePolicyInfoParams: React.FC<{
             {basicValues.map((bv: { name: string; value: number | string }, idx: number) => (
               <div
                 key={idx}
-                className="rounded-lg border border-gray-600 p-2 flex flex-col gap-2 bg-gray-900/60"
+                className="rounded-lg border border-gray-300 dark:border-gray-600 p-2 flex flex-col gap-2 bg-gray-50 dark:bg-gray-900/60"
               >
                 <input
                   type="text"
                   value={bv.name}
                   onChange={(e) => handleBasicValueChange(idx, "name", e.target.value)}
-                  className="w-full text-center text-xs rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-800 border-gray-700 text-gray-300"
+                  className="w-full text-center text-xs rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300"
                   placeholder="이름"
                 />
                 <input
@@ -488,7 +490,7 @@ export const DefinePolicyInfoParams: React.FC<{
                   step="0.001"
                   value={bv.value}
                   onChange={(e) => handleBasicValueChange(idx, "value", e.target.value)}
-                  className="w-full text-center text-xs font-mono rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-gray-700 border-gray-600 text-white"
+                  className="w-full text-center text-xs font-mono rounded border px-1 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white"
                   placeholder="0"
                 />
               </div>
@@ -594,11 +596,11 @@ const SelectRiskRatesParams: React.FC<{
           onChange={(e) =>
             handleChange("excludeNonNumericRows", e.target.checked)
           }
-          className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+          className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
         />
         <label
           htmlFor="excludeNonNumericRows"
-          className="text-xs text-gray-300 cursor-pointer"
+          className="text-xs text-gray-700 dark:text-gray-300 cursor-pointer"
         >
           Exclude rows with non-numeric values (excluding Age, Gender columns)
         </label>
@@ -606,7 +608,7 @@ const SelectRiskRatesParams: React.FC<{
 
       {/* Display ages to be excluded */}
       {excludeNonNumericRows && rowsToExclude.length > 0 && (
-        <div className="mb-2 p-2 bg-gray-800/50 rounded border border-gray-600">
+        <div className="mb-2 p-2 bg-gray-100 dark:bg-gray-800/50 rounded border border-gray-300 dark:border-gray-600">
           <p className="text-[10px] text-gray-400 mb-1">
             Rows to be excluded (Age):
           </p>
@@ -753,7 +755,7 @@ const NetPremiumCalculatorParams: React.FC<{
           if (part.startsWith("[") && part.endsWith("]")) {
             const key = part.slice(1, -1);
             // Determine color based on variable type
-            let colorClass = isDark ? "bg-gray-600 text-gray-300" : "bg-gray-200 text-gray-700";
+            let colorClass = isDark ? "bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300" : "bg-gray-200 text-gray-700";
             let unknown = false;
             if (
               premiumComponents?.nnxResults &&
@@ -777,7 +779,7 @@ const NetPremiumCalculatorParams: React.FC<{
             } else if (key === "m" || key === "n" || key === "PaymentTerm" || key === "PolicyTerm") {
               colorClass = "bg-purple-600 text-white";
             } else if (availableColumns.includes(key)) {
-              colorClass = isDark ? "bg-gray-600 text-gray-200" : "bg-gray-300 text-gray-800";
+              colorClass = isDark ? "bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200" : "bg-gray-300 text-gray-800";
             } else {
               // 미해결 토큰: 빨강 + "?" 표시
               colorClass = "bg-red-600 text-white ring-1 ring-red-300";
@@ -843,7 +845,7 @@ const NetPremiumCalculatorParams: React.FC<{
           <div className="w-2/5 flex flex-col gap-4">
             {/* NNX MMX Calculator Variables */}
             {premiumComponents && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Premium Component Variables
                 </label>
@@ -909,7 +911,7 @@ const NetPremiumCalculatorParams: React.FC<{
 
             {/* Additional Variables */}
             {additionalVars && Object.keys(additionalVars).length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Additional Variables
                 </label>
@@ -930,7 +932,7 @@ const NetPremiumCalculatorParams: React.FC<{
 
             {/* Table Columns */}
             {availableColumns.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Table Columns
                 </label>
@@ -939,7 +941,7 @@ const NetPremiumCalculatorParams: React.FC<{
                     <button
                       key={col}
                       onClick={() => insertToken(`[${col}]`)}
-                      className="px-2.5 py-1.5 bg-gray-600 hover:bg-gray-500 rounded-md text-xs text-gray-200 whitespace-nowrap transition-colors"
+                      className="px-2.5 py-1.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-md text-xs text-gray-800 dark:text-gray-200 whitespace-nowrap transition-colors"
                       title={`Insert [${col}]`}
                     >
                       {col}
@@ -951,7 +953,7 @@ const NetPremiumCalculatorParams: React.FC<{
 
             {/* Policy Variables */}
             {policyInfo && (
-              <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Policy Variables
                 </label>
@@ -978,7 +980,7 @@ const NetPremiumCalculatorParams: React.FC<{
           {/* Right Side: Formula and Result */}
           <div className="w-3/5 flex flex-col gap-4">
             {/* Formula Input */}
-            <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+            <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
               <label className="block text-xs text-gray-400 font-bold mb-2">
                 Net Premium Formula
               </label>
@@ -988,7 +990,7 @@ const NetPremiumCalculatorParams: React.FC<{
                 onChange={(e) => handleFormulaChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onFocus={() => setActiveFormula("formula")}
-                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
+                className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
                 placeholder="e.g. [MMX] / [NNX_Male_Mortality] + [α1]"
               />
               {renderPreview()}
@@ -1002,18 +1004,18 @@ const NetPremiumCalculatorParams: React.FC<{
                 | undefined;
               if (output && output.type === "NetPremiumOutput") {
                 return (
-                  <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600">
+                  <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                     <label className="block text-xs text-gray-400 font-bold mb-2">
                       Net Premium Result
                     </label>
-                    <div className="bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono">
-                      <div className="text-gray-300 mb-1">
+                    <div className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm font-mono text-gray-900 dark:text-white">
+                      <div className="text-gray-700 dark:text-gray-300 mb-1">
                         <span className="text-gray-500">Variable:</span>{" "}
                         <span className="text-blue-400">
                           {variableName || "PP"}
                         </span>
                       </div>
-                      <div className="text-white text-lg font-bold">
+                      <div className="text-gray-900 dark:text-white text-lg font-bold">
                         {new Intl.NumberFormat("en-US", {
                           maximumFractionDigits: 6,
                         }).format(output.netPremium)}
@@ -1215,7 +1217,7 @@ const GrossPremiumCalculatorParams: React.FC<{
     if (!formula) return null;
     const parts = formula.split(/(\[[^\]]+\])/g);
     return (
-      <div className="mt-2 p-2 bg-gray-800 rounded border border-gray-700 flex flex-wrap gap-1 items-center font-mono text-xs">
+      <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 flex flex-wrap gap-1 items-center font-mono text-xs">
         <span className="text-gray-500 text-[10px] w-full uppercase font-bold mb-1">
           Live Preview
         </span>
@@ -1223,7 +1225,7 @@ const GrossPremiumCalculatorParams: React.FC<{
           if (part.startsWith("[") && part.endsWith("]")) {
             const key = part.slice(1, -1);
             // Check if it's a premium component var, additional var, or policy var
-            let colorClass = "bg-gray-600 text-gray-300";
+            let colorClass = "bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300";
             if (premiumComponentVars.includes(key)) {
               colorClass = "bg-blue-600 text-white";
             } else if (key === "MMX") {
@@ -1235,7 +1237,7 @@ const GrossPremiumCalculatorParams: React.FC<{
             } else if (key === "m" || key === "n") {
               colorClass = "bg-purple-600 text-white";
             } else if (availableColumns.includes(key)) {
-              colorClass = "bg-gray-600 text-gray-200";
+              colorClass = "bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200";
             }
             return (
               <span
@@ -1248,7 +1250,7 @@ const GrossPremiumCalculatorParams: React.FC<{
           }
           if (!part) return null;
           return (
-            <span key={i} className="text-gray-300">
+            <span key={i} className="text-gray-700 dark:text-gray-300">
               {part}
             </span>
           );
@@ -1288,7 +1290,7 @@ const GrossPremiumCalculatorParams: React.FC<{
           <div className="w-2/5 flex flex-col gap-4">
             {/* NNX MMX Calculator Variables */}
             {premiumComponentVars.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Premium Component Variables
                 </label>
@@ -1313,7 +1315,7 @@ const GrossPremiumCalculatorParams: React.FC<{
 
             {/* Additional Variables */}
             {additionalVarKeys.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Additional Variables
                 </label>
@@ -1334,7 +1336,7 @@ const GrossPremiumCalculatorParams: React.FC<{
 
             {/* Table Columns */}
             {availableColumns.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Table Columns
                 </label>
@@ -1343,7 +1345,7 @@ const GrossPremiumCalculatorParams: React.FC<{
                     <button
                       key={col}
                       onClick={() => insertToken(`[${col}]`)}
-                      className="px-2.5 py-1.5 bg-gray-600 hover:bg-gray-500 rounded-md text-xs text-gray-200 whitespace-nowrap transition-colors"
+                      className="px-2.5 py-1.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-md text-xs text-gray-800 dark:text-gray-200 whitespace-nowrap transition-colors"
                       title={`Insert [${col}]`}
                     >
                       {col}
@@ -1355,7 +1357,7 @@ const GrossPremiumCalculatorParams: React.FC<{
 
             {/* Policy Variables */}
             {policyInfo && (
-              <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Policy Variables
                 </label>
@@ -1381,7 +1383,7 @@ const GrossPremiumCalculatorParams: React.FC<{
 
           {/* Right Side: Formula */}
           <div className="w-3/5 flex flex-col gap-4">
-            <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+            <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
               <label className="block text-xs text-gray-400 font-bold mb-2">
                 Gross Premium Formula
               </label>
@@ -1391,7 +1393,7 @@ const GrossPremiumCalculatorParams: React.FC<{
                 onChange={(e) => handleFormulaChange(e.target.value)}
                 onKeyDown={handleKeyDown}
                 onFocus={() => setActiveFormula("formula")}
-                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
+                className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
                 placeholder="e.g. [PP] / (1 - 0.0)"
               />
               {renderPreview()}
@@ -1553,20 +1555,20 @@ const AdditionalNameParams: React.FC<{
           {basicValues.map((bv: any, index: number) => (
             <div
               key={index}
-              className="bg-gray-900/50 p-2 rounded-md border border-gray-700 flex flex-col gap-2"
+              className="bg-gray-50 dark:bg-gray-900/50 p-2 rounded-md border border-gray-200 dark:border-gray-700 flex flex-col gap-2"
             >
               <input
                 type="text"
                 value={bv.name}
                 readOnly
-                className="w-full bg-gray-800 text-center text-gray-400 border border-gray-700 rounded px-1 py-1 text-xs cursor-not-allowed"
+                className="w-full bg-gray-100 dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 border border-gray-300 dark:border-gray-700 rounded px-1 py-1 text-xs cursor-not-allowed"
               />
               <input
                 type="number"
                 value={bv.value}
                 readOnly
                 step="0.001"
-                className="w-full bg-gray-800 text-center text-gray-400 border border-gray-700 rounded px-1 py-1 text-xs font-mono cursor-not-allowed"
+                className="w-full bg-gray-100 dark:bg-gray-800 text-center text-gray-500 dark:text-gray-400 border border-gray-300 dark:border-gray-700 rounded px-1 py-1 text-xs font-mono cursor-not-allowed"
               />
             </div>
           ))}
@@ -1585,7 +1587,7 @@ const AdditionalNameParams: React.FC<{
           {definitions.map((def: any) => (
             <div
               key={def.id}
-              className="bg-gray-900/50 p-3 rounded-md border border-gray-600 relative flex flex-col gap-2"
+              className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600 relative flex flex-col gap-2"
             >
               <button
                 onClick={() => handleRemoveDefinition(def.id)}
@@ -1595,7 +1597,7 @@ const AdditionalNameParams: React.FC<{
               </button>
 
               {/* Name Input */}
-              <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-xs h-[38px] w-full">
+              <div className="flex items-center bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-xs h-[38px] w-full">
                 <span className="text-gray-400 mr-2 font-bold text-xs">
                   Var Name:
                 </span>
@@ -1606,7 +1608,7 @@ const AdditionalNameParams: React.FC<{
                   onChange={(e) =>
                     handleUpdateDefinition(def.id, "name", e.target.value)
                   }
-                  className="flex-grow bg-transparent focus:outline-none text-gray-200 placeholder-gray-500"
+                  className="flex-grow bg-transparent focus:outline-none text-gray-800 dark:text-gray-200 placeholder-gray-500"
                 />
               </div>
 
@@ -1622,7 +1624,7 @@ const AdditionalNameParams: React.FC<{
                     }
                     className="text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-gray-300">Static Value</span>
+                  <span className="text-gray-700 dark:text-gray-300">Static Value</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -1634,7 +1636,7 @@ const AdditionalNameParams: React.FC<{
                     }
                     className="text-blue-600 focus:ring-blue-500"
                   />
-                  <span className="text-gray-300">Table Lookup</span>
+                  <span className="text-gray-700 dark:text-gray-300">Table Lookup</span>
                 </label>
               </div>
 
@@ -1687,7 +1689,7 @@ const AdditionalNameParams: React.FC<{
               )}
 
               {/* Live Preview */}
-              <div className="text-xs text-gray-400 mt-1 flex justify-between items-center bg-gray-800 px-2 py-1 rounded">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex justify-between items-center bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
                 <span>Preview Value:</span>
                 <span className="font-mono font-bold text-green-400">
                   {getPreviewValue(def)}
@@ -1931,7 +1933,7 @@ const LoadDataParams: React.FC<{
           className={`px-3 py-1 text-xs rounded-md font-semibold transition-colors ${
             sourceMode === "file"
               ? "bg-blue-600 text-white"
-              : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+              : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-600"
           }`}
         >
           파일
@@ -1941,7 +1943,7 @@ const LoadDataParams: React.FC<{
           className={`px-3 py-1 text-xs rounded-md font-semibold transition-colors ${
             sourceMode === "url"
               ? "bg-blue-600 text-white"
-              : "bg-gray-700 text-gray-400 hover:bg-gray-600"
+              : "bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-600"
           }`}
         >
           URL
@@ -1952,7 +1954,7 @@ const LoadDataParams: React.FC<{
           type="text"
           value={parameters.source}
           readOnly
-          className="flex-grow bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs"
+          className="flex-grow bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-xs text-gray-900 dark:text-white"
           placeholder="No file selected"
         />
         {sourceMode === "file" && (
@@ -1976,7 +1978,7 @@ const LoadDataParams: React.FC<{
                 if (e.key === "Enter" && !urlLoading) handleLoadFromUrl();
               }}
               placeholder="https://example.com/standard_life_table.csv"
-              className="flex-grow bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs"
+              className="flex-grow bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-xs text-gray-900 dark:text-white"
             />
             <button
               onClick={handleLoadFromUrl}
@@ -2006,7 +2008,7 @@ const LoadDataParams: React.FC<{
           }
           rows={2}
           placeholder="예: 사내 공유드라이브 /data/위험률.csv, 또는 https://… (참조 저장 시 데이터 위치를 남겨두세요)"
-          className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs resize-y"
+          className="w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-xs resize-y text-gray-900 dark:text-white"
         />
       </div>
       {/* 파일 타입 표시 */}
@@ -2026,12 +2028,12 @@ const LoadDataParams: React.FC<{
         <h4 className="text-xs text-gray-500 uppercase font-bold mb-2">
           Examples
         </h4>
-        <div className="bg-gray-900 p-2 rounded-md space-y-1">
+        <div className="bg-gray-50 dark:bg-gray-900 p-2 rounded-md space-y-1">
           {SAMPLE_DATA.filter((s) => s.name.includes(".csv")).map((sample) => (
             <div
               key={sample.name}
               onDoubleClick={() => handleLoadSample(sample)}
-              className="px-2 py-1.5 text-xs rounded-md hover:bg-gray-700 cursor-pointer"
+              className="px-2 py-1.5 text-xs rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer"
               title="Double-click to load"
             >
               {sample.name}
@@ -2068,6 +2070,8 @@ const SelectDataParams: React.FC<{
   allConnections,
   moduleId,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const dataSource = getConnectedDataSource(
     moduleId,
     "data_in",
@@ -2186,7 +2190,7 @@ const SelectDataParams: React.FC<{
         <select
           value={deathRateColumn}
           onChange={(e) => handleDeathRateColumnChange(e.target.value)}
-          className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
         >
           <option value="">(선택 안 함)</option>
           {inputColumns
@@ -2197,19 +2201,19 @@ const SelectDataParams: React.FC<{
         </select>
       </div>
 
-      <h4 className="text-sm text-gray-400 font-bold mb-2">
+      <h4 className={`text-sm font-bold mb-2 ${isDark ? "text-gray-400" : "text-gray-600"}`}>
         Column Selections
       </h4>
       <div className="flex gap-2 mb-3">
         <button
           onClick={handleSelectAll}
-          className="px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 rounded-md font-semibold w-full"
+          className={`px-3 py-1.5 text-xs rounded-md font-semibold w-full ${isDark ? "bg-gray-600 hover:bg-gray-500 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800"}`}
         >
           Select All
         </button>
         <button
           onClick={handleDeselectAll}
-          className="px-3 py-1.5 text-xs bg-gray-600 hover:bg-gray-500 rounded-md font-semibold w-full"
+          className={`px-3 py-1.5 text-xs rounded-md font-semibold w-full ${isDark ? "bg-gray-600 hover:bg-gray-500 text-white" : "bg-gray-200 hover:bg-gray-300 text-gray-800"}`}
         >
           Deselect All
         </button>
@@ -2217,10 +2221,10 @@ const SelectDataParams: React.FC<{
       <div className="grid grid-cols-[auto,1fr] gap-x-3 items-center mb-2 px-2">
         <div />
         <div className="grid grid-cols-2 gap-x-3">
-          <label className="text-sm text-gray-400 font-bold">
+          <label className={`text-sm font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>
             Original Name
           </label>
-          <label className="text-sm text-gray-400 font-bold">New Name</label>
+          <label className={`text-sm font-bold ${isDark ? "text-gray-400" : "text-gray-600"}`}>New Name</label>
         </div>
       </div>
       <div className="space-y-2 max-h-72 overflow-y-auto pr-2 panel-scrollbar">
@@ -2235,19 +2239,21 @@ const SelectDataParams: React.FC<{
               key={selection.originalName}
               className={`grid grid-cols-[auto,1fr] gap-x-3 items-center p-2 rounded-md ${
                 isDeathRate
-                  ? "bg-orange-950/40 border border-orange-800/40"
-                  : "bg-gray-900/50"
+                  ? "bg-orange-50 dark:bg-orange-950/40 border border-orange-300 dark:border-orange-800/40"
+                  : isDark
+                    ? "bg-gray-900/50"
+                    : "bg-gray-100 border border-gray-200"
               }`}
             >
               <input
                 type="checkbox"
                 checked={selection.selected}
                 onChange={(e) => handleSelectionChange(index, e.target.checked)}
-                className="form-checkbox h-4 w-4 text-blue-500 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+                className="form-checkbox h-4 w-4 text-blue-500 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
               />
               <div className="grid grid-cols-2 gap-x-3">
                 <span
-                  className="text-sm text-gray-300 truncate bg-gray-700 px-2 py-1.5 rounded-md border border-gray-600"
+                  className="text-sm text-gray-700 dark:text-gray-300 truncate bg-gray-100 dark:bg-gray-700 px-2 py-1.5 rounded-md border border-gray-300 dark:border-gray-600"
                   title={selection.originalName}
                 >
                   {selection.originalName}
@@ -2258,8 +2264,10 @@ const SelectDataParams: React.FC<{
                   onChange={(e) => handleNameChange(index, e.target.value)}
                   className={`border rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 disabled:opacity-60 disabled:cursor-not-allowed ${
                     isDeathRate
-                      ? "bg-orange-900/30 border-orange-700 text-orange-200 focus:ring-orange-500"
-                      : "bg-gray-700 border-gray-600 focus:ring-blue-500"
+                      ? "bg-orange-100 dark:bg-orange-900/30 border-orange-400 dark:border-orange-700 text-orange-800 dark:text-orange-200 focus:ring-orange-500"
+                      : isDark
+                        ? "bg-gray-700 border-gray-600 text-white focus:ring-blue-500"
+                        : "bg-white border-gray-300 text-gray-900 focus:ring-blue-500"
                   }`}
                   placeholder="New column name"
                   disabled={isLocked}
@@ -2560,7 +2568,7 @@ const ReserveCalculatorParams: React.FC<{
           <div className="w-2/5 flex flex-col gap-4">
             {/* Premium Variables */}
             {premiumComponentVars.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Premium Variables
                 </label>
@@ -2585,7 +2593,7 @@ const ReserveCalculatorParams: React.FC<{
 
             {/* Additional Variables */}
             {additionalVarKeys.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Additional Variables
                 </label>
@@ -2606,7 +2614,7 @@ const ReserveCalculatorParams: React.FC<{
 
             {/* Table Columns */}
             {availableColumns.length > 0 && (
-              <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Table Columns
                 </label>
@@ -2615,7 +2623,7 @@ const ReserveCalculatorParams: React.FC<{
                     <button
                       key={col}
                       onClick={() => insertToken(`[${col}]`, activeFormula)}
-                      className="px-2.5 py-1.5 bg-gray-600 hover:bg-gray-500 rounded-md text-xs text-gray-200 whitespace-nowrap transition-colors"
+                      className="px-2.5 py-1.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded-md text-xs text-gray-800 dark:text-gray-200 whitespace-nowrap transition-colors"
                       title={`Insert [${col}]`}
                     >
                       {col}
@@ -2627,7 +2635,7 @@ const ReserveCalculatorParams: React.FC<{
 
             {/* Policy Variables */}
             {policyInfo && (
-              <div className="bg-gray-900/50 p-3 rounded-md border border-gray-600">
+              <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
                 <label className="block text-xs text-gray-400 font-bold mb-2">
                   Policy Variables
                 </label>
@@ -2654,7 +2662,7 @@ const ReserveCalculatorParams: React.FC<{
           {/* Right Side: Two Formulas (top and bottom) */}
           <div className="w-3/5 flex flex-col gap-4">
             {/* Top Formula: Payment Term or Less */}
-            <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+            <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
               <label className="block text-xs text-gray-400 font-bold mb-2">
                 Formula for Payment Term ≤ m
               </label>
@@ -2664,7 +2672,7 @@ const ReserveCalculatorParams: React.FC<{
                 onChange={(e) => handleFormula1Change(e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, "formula1")}
                 onFocus={() => setActiveFormula("formula1")}
-                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
+                className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
                 placeholder="e.g. [GP] * [Age]"
               />
             </div>
@@ -2692,7 +2700,7 @@ const ReserveCalculatorParams: React.FC<{
             </div>
 
             {/* Bottom Formula: Greater than Payment Term */}
-            <div className="flex-1 bg-gray-900/50 p-3 rounded-md border border-gray-600">
+            <div className="flex-1 bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600">
               <label className="block text-xs text-gray-400 font-bold mb-2">
                 Formula for Payment Term &gt; m
               </label>
@@ -2702,7 +2710,7 @@ const ReserveCalculatorParams: React.FC<{
                 onChange={(e) => handleFormula2Change(e.target.value)}
                 onKeyDown={(e) => handleKeyDown(e, "formula2")}
                 onFocus={() => setActiveFormula("formula2")}
-                className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
+                className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[140px] resize-none"
                 placeholder="e.g. [GP] * 0.5"
               />
             </div>
@@ -2829,7 +2837,7 @@ const RateModifierParams: React.FC<{
     if (!formula) return null;
     const parts = formula.split(/(\[[^\]]+\])/g);
     return (
-      <div className="mt-2 p-2 bg-gray-800 rounded border border-gray-700 flex flex-wrap gap-1 items-center font-mono text-xs">
+      <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 flex flex-wrap gap-1 items-center font-mono text-xs">
         <span className="text-gray-500 text-[10px] w-full uppercase font-bold mb-1">
           Live Preview
         </span>
@@ -2846,7 +2854,7 @@ const RateModifierParams: React.FC<{
           }
           if (!part) return null;
           return (
-            <span key={i} className="text-gray-300">
+            <span key={i} className="text-gray-700 dark:text-gray-300">
               {part}
             </span>
           );
@@ -2870,7 +2878,7 @@ const RateModifierParams: React.FC<{
           {calculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 p-3 rounded-md border border-gray-600 relative flex flex-col gap-3"
+              className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600 relative flex flex-col gap-3"
             >
               <button
                 onClick={() => handleRemoveCalculation(calc.id)}
@@ -2901,10 +2909,10 @@ const RateModifierParams: React.FC<{
                     handleUpdateCalculation(calc.id, "formula", e.target.value)
                   }
                   onKeyDown={(e) => handleKeyDown(e, calc.id)}
-                  className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[80px]"
+                  className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 min-h-[80px]"
                   placeholder="e.g. [Male_Cancer] * 0.9"
                 />
-                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto panel-scrollbar bg-gray-800 p-1 rounded mb-2">
+                <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto panel-scrollbar bg-gray-100 dark:bg-gray-800 p-1 rounded mb-2">
                   <span className="text-xs text-gray-500 w-full mb-1">
                     Click to add variable:
                   </span>
@@ -2912,7 +2920,7 @@ const RateModifierParams: React.FC<{
                     <button
                       key={col}
                       onClick={() => insertToken(calc.id, `[${col}]`)}
-                      className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 rounded text-xs text-gray-200 whitespace-nowrap"
+                      className="px-2 py-0.5 bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 rounded text-xs text-gray-800 dark:text-gray-200 whitespace-nowrap"
                     >
                       {col}
                     </button>
@@ -2965,6 +2973,8 @@ const CalculateSurvivorsParams: React.FC<{
   allConnections,
   moduleId,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const { ageColumn, mortalityColumn, calculations, addFixedLx } = parameters;
   const [selectedRates, setSelectedRates] = useState<Record<string, string>>(
     {}
@@ -3152,9 +3162,9 @@ const CalculateSurvivorsParams: React.FC<{
                 addFixedLx: e.target.checked,
               })
             }
-            className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500"
+            className="w-4 h-4 text-blue-600 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 rounded focus:ring-blue-500"
           />
-          <span className="text-sm text-gray-300">
+          <span className="text-sm text-gray-700 dark:text-gray-300">
             lx 추가: 경과기간 동안 100,000 고정
           </span>
         </label>
@@ -3203,7 +3213,7 @@ const CalculateSurvivorsParams: React.FC<{
                 return (
                   <div
                     key={calc.id}
-                    className="bg-gray-900/50 p-3 rounded-md border border-gray-600 relative flex flex-col gap-2"
+                    className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600 relative flex flex-col gap-2"
                   >
                     <button
                       onClick={() => handleRemoveCalculation(calc.id)}
@@ -3216,11 +3226,11 @@ const CalculateSurvivorsParams: React.FC<{
                     <div className="flex items-center gap-1.5 mb-1">
                       <button
                         onClick={() => handleToggleCalcType(calc.id)}
-                        className={`px-2 py-0.5 rounded text-xs font-medium ${!isFixed ? 'bg-blue-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${!isFixed ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-600'}`}
                       >감소율</button>
                       <button
                         onClick={() => handleToggleCalcType(calc.id)}
-                        className={`px-2 py-0.5 rounded text-xs font-medium ${isFixed ? 'bg-emerald-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600'}`}
+                        className={`px-2 py-0.5 rounded text-xs font-medium ${isFixed ? 'bg-emerald-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-600'}`}
                       >고정값</button>
                     </div>
 
@@ -3228,16 +3238,16 @@ const CalculateSurvivorsParams: React.FC<{
                       /* ── 고정값 UI */
                       <div className="flex items-center gap-2 w-full">
                         {/* 출력 열 이름 */}
-                        <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0">
+                        <div className="flex items-center bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0">
                           <span className="text-gray-400 mr-1">출력:</span>
-                          <span className="text-gray-300 mr-0.5">lx</span>
+                          <span className="text-gray-700 dark:text-gray-300 mr-0.5">lx</span>
                           {calc.name && calc.name !== 'Fixed' && (
                             <span className="text-gray-400">_{calc.name}</span>
                           )}
                         </div>
                         <span className="text-gray-500 text-sm">=</span>
                         {/* 고정값 입력 */}
-                        <div className="flex items-center bg-gray-700 border border-emerald-700 rounded px-2 py-1.5 text-sm h-[38px]">
+                        <div className="flex items-center bg-gray-100 dark:bg-gray-700 border border-emerald-400 dark:border-emerald-700 rounded px-2 py-1.5 text-sm h-[38px]">
                           <span className="text-gray-400 mr-1">입력:</span>
                           <input
                             type="number"
@@ -3247,14 +3257,14 @@ const CalculateSurvivorsParams: React.FC<{
                           />
                         </div>
                         {/* 이름 편집 */}
-                        <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0">
+                        <div className="flex items-center bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0">
                           <span className="text-gray-400 mr-1 text-xs">이름:</span>
                           <input
                             type="text"
                             value={calc.name === 'Fixed' ? '' : calc.name}
                             placeholder="(선택)"
                             onChange={(e) => handleFixedNameChange(calc.id, e.target.value || 'Fixed')}
-                            className="w-20 bg-transparent focus:outline-none text-gray-300 text-xs"
+                            className="w-20 bg-transparent focus:outline-none text-gray-700 dark:text-gray-300 text-xs"
                           />
                         </div>
                       </div>
@@ -3262,7 +3272,7 @@ const CalculateSurvivorsParams: React.FC<{
                       /* ── 감소율 UI */
                       <div className="flex items-center gap-2 w-full min-w-0">
                         <div
-                          className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0"
+                          className="flex items-center bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] flex-shrink-0"
                           title={`출력 열 이름: ${lxColName}`}
                         >
                           <span className="text-gray-400">lx_</span>
@@ -3271,11 +3281,11 @@ const CalculateSurvivorsParams: React.FC<{
                             placeholder="(자동생성)"
                             value={calc.name}
                             onChange={(e) => handleFixedNameChange(calc.id, e.target.value)}
-                            className="w-32 bg-transparent focus:outline-none text-blue-300"
+                            className={`w-32 bg-transparent focus:outline-none ${isDark ? "text-blue-300" : "text-blue-700"}`}
                           />
                         </div>
 
-                        <div className="flex-grow bg-gray-700 p-1.5 rounded-md border border-gray-600 min-h-[38px] flex flex-wrap gap-1 content-start items-center min-w-0">
+                        <div className="flex-grow bg-gray-100 dark:bg-gray-700 p-1.5 rounded-md border border-gray-300 dark:border-gray-600 min-h-[38px] flex flex-wrap gap-1 content-start items-center min-w-0">
                           {(calc.decrementRates || []).length === 0 && (
                             <p className="text-xs text-gray-500 px-1">
                               Add decrement rates...
@@ -3315,7 +3325,7 @@ const CalculateSurvivorsParams: React.FC<{
                                 [calc.id]: e.target.value,
                               }))
                             }
-                            className="w-40 bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-40 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm h-[38px] focus:outline-none focus:ring-2 focus:ring-blue-500"
                             disabled={availableRates.length === 0}
                           >
                             <option value="" disabled>
@@ -3330,7 +3340,7 @@ const CalculateSurvivorsParams: React.FC<{
                           <button
                             onClick={() => handleAddRateToCalc(calc.id)}
                             disabled={!selectedRates[calc.id]}
-                            className="px-3 py-1.5 text-sm bg-gray-600 hover:bg-gray-500 rounded-md font-semibold whitespace-nowrap h-[38px] disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed"
+                            className="px-3 py-1.5 text-sm bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-800 dark:text-gray-100 rounded-md font-semibold whitespace-nowrap h-[38px] disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed"
                           >
                             Add Rate
                           </button>
@@ -3363,7 +3373,7 @@ const CalculateSurvivorsParams: React.FC<{
                               e.target.value as "udd" | "independent"
                             )
                           }
-                          className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         >
                           <option value="udd">
                             UDD 보정 (qm+qo−qm·qo/2) · 기본
@@ -3377,9 +3387,9 @@ const CalculateSurvivorsParams: React.FC<{
 
                     <div className="text-[10px] text-gray-500">
                       →{" "}
-                      <span className="text-blue-300">{lxColName}</span>
+                      <span className={isDark ? "text-blue-300" : "text-blue-700"}>{lxColName}</span>
                       {!isFixed && (
-                        <>, <span className="text-blue-300">{dxColName}</span></>
+                        <>, <span className={isDark ? "text-blue-300" : "text-blue-700"}>{dxColName}</span></>
                       )}
                       {isFixed && (
                         <span className="ml-2 text-emerald-600">
@@ -3429,6 +3439,8 @@ const ClaimsCalculatorParams: React.FC<{
   allConnections,
   moduleId,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const { calculations } = parameters;
   const dataSource = getConnectedDataSource(
     moduleId,
@@ -3607,7 +3619,7 @@ const ClaimsCalculatorParams: React.FC<{
         {(calculations || []).map((calc: any) => (
           <div
             key={calc.id}
-            className="bg-gray-900/50 p-3 rounded-md border border-gray-600 relative flex flex-col gap-2"
+            className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600 relative flex flex-col gap-2"
           >
             <button
               onClick={() => handleRemoveCalculation(calc.id)}
@@ -3620,7 +3632,7 @@ const ClaimsCalculatorParams: React.FC<{
             <div className="flex items-end gap-1.5 w-full">
               <div className="flex flex-col gap-1 flex-shrink-0">
                 <span className="text-xs text-gray-400">출력명</span>
-                <div className="flex items-center bg-gray-700 border border-gray-600 rounded px-2 py-1 h-[26px]">
+                <div className="flex items-center bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 h-[26px]">
                   <span className="text-gray-500 text-xs mr-0.5">dx_/Cx_</span>
                   <input
                     type="text"
@@ -3629,7 +3641,7 @@ const ClaimsCalculatorParams: React.FC<{
                     onChange={(e) =>
                       handleUpdateCalculation(calc.id, "name", e.target.value)
                     }
-                    className="w-24 bg-transparent focus:outline-none text-blue-300 text-xs font-mono"
+                    className={`w-24 bg-transparent focus:outline-none text-xs font-mono ${isDark ? "text-blue-300" : "text-blue-700"}`}
                   />
                 </div>
               </div>
@@ -3656,9 +3668,9 @@ const ClaimsCalculatorParams: React.FC<{
               </div>
             </div>
             <div className="text-[10px] text-gray-500 pl-1">
-              → <span className="text-blue-300">dx_{calc.name || calc.riskRateColumn || "?"}</span>
+              → <span className={isDark ? "text-blue-300" : "text-blue-700"}>dx_{calc.name || calc.riskRateColumn || "?"}</span>
               {", "}
-              <span className="text-blue-300">Cx_{calc.name || calc.riskRateColumn || "?"}</span>
+              <span className={isDark ? "text-blue-300" : "text-blue-700"}>Cx_{calc.name || calc.riskRateColumn || "?"}</span>
             </div>
           </div>
         ))}
@@ -3686,6 +3698,8 @@ const NxMxCalculatorParams: React.FC<{
   allConnections,
   moduleId,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const dataSource = getConnectedDataSource(
     moduleId,
     "data_in",
@@ -3861,7 +3875,7 @@ const NxMxCalculatorParams: React.FC<{
           {nxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600"
+              className="bg-gray-50 dark:bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-600"
             >
               {/* 단일 행: [출력 textbox] ← [Dx 콤보] [toggle] [삭제] */}
               <div className="flex items-center gap-1.5">
@@ -3869,7 +3883,7 @@ const NxMxCalculatorParams: React.FC<{
                 <div className="flex items-center gap-0.5 w-28 shrink-0">
                   <span className="text-[10px] text-gray-500 shrink-0">Nx_</span>
                   <input
-                    className={`flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-[11px] font-mono ${calc.active !== false ? "text-blue-300" : "text-gray-500"}`}
+                    className={`flex-1 min-w-0 rounded px-1 py-0.5 text-[11px] font-mono border ${isDark ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"} ${calc.active !== false ? (isDark ? "text-blue-300" : "text-blue-700") : "text-gray-500"}`}
                     value={calc.name || calc.baseColumn.replace(/^Dx_/, "")}
                     onChange={(e) =>
                       handleUpdate("nxCalculations", calc.id, { name: e.target.value })
@@ -3923,14 +3937,14 @@ const NxMxCalculatorParams: React.FC<{
           {mxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600 space-y-1.5"
+              className="bg-gray-50 dark:bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 space-y-1.5"
             >
               {/* 단일 행: [출력 textbox] ← [Cx 콤보] [toggle] [삭제] */}
               <div className="flex items-center gap-1.5">
                 <div className="flex items-center gap-0.5 w-28 shrink-0">
                   <span className="text-[10px] text-gray-500 shrink-0">Mx_</span>
                   <input
-                    className={`flex-1 min-w-0 bg-gray-800 border border-gray-600 rounded px-1 py-0.5 text-[11px] font-mono ${calc.active !== false ? "text-blue-300" : "text-gray-500"}`}
+                    className={`flex-1 min-w-0 rounded px-1 py-0.5 text-[11px] font-mono border ${isDark ? "bg-gray-800 border-gray-600" : "bg-white border-gray-300"} ${calc.active !== false ? (isDark ? "text-blue-300" : "text-blue-700") : "text-gray-500"}`}
                     value={calc.name || calc.baseColumn.replace(/^Cx_/, "")}
                     onChange={(e) =>
                       handleUpdate("mxCalculations", calc.id, { name: e.target.value })
@@ -4000,14 +4014,14 @@ const NxMxCalculatorParams: React.FC<{
                   </label>
                   <div className="grid grid-cols-3 gap-1">
                     {(calc.paymentRatios || []).map((ratio: any) => (
-                      <div key={ratio.year} className="bg-gray-800 p-1 rounded text-[10px]">
+                      <div key={ratio.year} className="bg-gray-100 dark:bg-gray-800 p-1 rounded text-[10px]">
                         <div className="text-gray-500 mb-0.5 text-center">Y{ratio.year}</div>
                         <select
                           value={ratio.type}
                           onChange={(e) =>
                             handleUpdatePaymentRatio(calc.id, ratio.year, "type", e.target.value)
                           }
-                          className="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px] mb-0.5"
+                          className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 text-[10px] mb-0.5"
                         >
                           <option value="100%">100%</option>
                           <option value="50%">50%</option>
@@ -4021,7 +4035,7 @@ const NxMxCalculatorParams: React.FC<{
                             onChange={(e) =>
                               handleUpdatePaymentRatio(calc.id, ratio.year, "customValue", parseFloat(e.target.value))
                             }
-                            className="w-full bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-[10px]"
+                            className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-1 py-0.5 text-[10px]"
                           />
                         )}
                       </div>
@@ -4056,6 +4070,8 @@ const PremiumComponentParams: React.FC<{
   allConnections,
   moduleId,
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === "dark";
   const dataSource = getConnectedDataSource(
     moduleId,
     "data_in",
@@ -4205,12 +4221,12 @@ const PremiumComponentParams: React.FC<{
           {nnxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600 space-y-1"
+              className="bg-gray-50 dark:bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 space-y-1"
             >
               {/* 단일 행: [NNX_base (고정 라벨)] ← [Nx 콤보] [Dx 콤보] [삭제] */}
               <div className="flex items-center gap-1.5">
                 <div className="w-28 shrink-0">
-                  <span className={`text-[11px] font-mono ${calc.nxColumn ? "text-blue-300" : "text-gray-500"}`}>
+                  <span className={`text-[11px] font-mono ${calc.nxColumn ? (isDark ? "text-blue-300" : "text-blue-700") : "text-gray-500"}`}>
                     {calc.nxColumn
                       ? `NNX_${calc.nxColumn.replace(/^Nx_/, "")}`
                       : "NNX_?"}
@@ -4274,12 +4290,12 @@ const PremiumComponentParams: React.FC<{
           {sumxCalculations.map((calc: any) => (
             <div
               key={calc.id}
-              className="bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-600 space-y-1"
+              className="bg-gray-50 dark:bg-gray-900/50 px-2 py-1.5 rounded-md border border-gray-200 dark:border-gray-600 space-y-1"
             >
               {/* 단일 행: [BPV_name (고정 라벨)] ← [Mx 콤보] [Amount 입력] [삭제] */}
               <div className="flex items-center gap-1.5">
                 <div className="w-28 shrink-0">
-                  <span className={`text-[11px] font-mono ${calc.mxColumn ? "text-blue-300" : "text-gray-500"}`}>
+                  <span className={`text-[11px] font-mono ${calc.mxColumn ? (isDark ? "text-blue-300" : "text-blue-700") : "text-gray-500"}`}>
                     {calc.mxColumn
                       ? `BPV_${calc.mxColumn.replace(/^Mx_/, "")}`
                       : "BPV_?"}
@@ -4381,7 +4397,7 @@ const ScenarioRunnerParams: React.FC<{
       {scenarios.map((scen: any) => (
         <div
           key={scen.id}
-          className="bg-gray-900/50 p-3 rounded-md border border-gray-600 relative space-y-3"
+          className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-md border border-gray-200 dark:border-gray-600 relative space-y-3"
         >
           <button
             onClick={() => handleRemove(scen.id)}
@@ -4407,7 +4423,7 @@ const ScenarioRunnerParams: React.FC<{
                 onChange={(e) =>
                   handleUpdate(scen.id, "targetModuleId", e.target.value)
                 }
-                className="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1.5 text-sm"
+                className="w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 text-sm"
               >
                 <option value="" disabled>
                   Select Module
@@ -4623,8 +4639,10 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
 }) => {
   const { theme } = useTheme();
   const isDark = theme === "dark";
+  const { isUnlocked: isAdvancedUnlocked } = useAdvancedAccess();
   const [isRunning, setIsRunning] = React.useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = React.useState(false);
+  const [dslOpen, setDslOpen] = React.useState(false);
   const [hasAppliedSavedDefaults, setHasAppliedSavedDefaults] = React.useState(false);
   const initialParametersRef = React.useRef<Record<string, any>>(
     JSON.parse(JSON.stringify(module.parameters))
@@ -4795,22 +4813,73 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
           </div>
         </header>
         <main className="flex-grow p-4 overflow-auto custom-scrollbar">
+          {/* 초보자 친화 모듈 설명 카드 (장식/레이아웃 모듈 제외) */}
+          {module.type !== ModuleType.TextBox &&
+            module.type !== ModuleType.GroupBox &&
+            module.type !== ModuleType.AdditionalName &&
+            module.type !== ModuleType.PipelineExplainer &&
+            (() => {
+              const help = MODULE_HELP[module.type] ?? DEFAULT_MODULE_HELP;
+              return (
+                <div
+                  className={`mb-4 rounded-md border p-3 ${
+                    isDark
+                      ? "bg-blue-950/30 border-blue-800/50 text-blue-100"
+                      : "bg-blue-50 border-blue-200 text-blue-900"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="text-base leading-none mt-0.5">💡</span>
+                    <div className="min-w-0">
+                      <div
+                        className={`text-xs font-bold mb-1 ${
+                          isDark ? "text-blue-200" : "text-blue-700"
+                        }`}
+                      >
+                        {help.title}
+                      </div>
+                      <p
+                        className={`text-[11px] leading-relaxed ${
+                          isDark ? "text-blue-100/90" : "text-blue-900/90"
+                        }`}
+                      >
+                        {help.description}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           {renderContent()}
-          {(() => {
+          {/* DSL 섹션: 고급기능 해제 사용자에게만 노출, 기본 접힘 */}
+          {isAdvancedUnlocked && (() => {
             const fullDSL = generateDSL(projectName, modules);
             const section = extractModuleSection(fullDSL, module.type);
             if (!section) return null;
             return (
               <div className={`mt-4 border-t pt-4 ${isDark ? "border-gray-700" : "border-gray-200"}`}>
                 <div className="flex items-center justify-between mb-2">
-                  <span className={`text-xs font-bold ${isDark ? "text-purple-300" : "text-purple-600"}`}>DSL 섹션</span>
-                  <span className="text-[10px] text-gray-500">저장 시 DSL 편집기에 반영됩니다</span>
+                  <button
+                    type="button"
+                    onClick={() => setDslOpen((v) => !v)}
+                    className={`flex items-center gap-1 text-xs font-bold focus:outline-none ${isDark ? "text-purple-300 hover:text-purple-200" : "text-purple-600 hover:text-purple-700"}`}
+                    aria-expanded={dslOpen}
+                    title={dslOpen ? "DSL 섹션 접기" : "DSL 섹션 펼치기"}
+                  >
+                    <span className="transition-transform">{dslOpen ? "▾" : "▸"}</span>
+                    DSL 섹션
+                  </button>
+                  {dslOpen && (
+                    <span className="text-[10px] text-gray-500">저장 시 DSL 편집기에 반영됩니다</span>
+                  )}
                 </div>
-                <pre className={`border rounded p-3 text-xs font-mono whitespace-pre overflow-x-auto max-h-60 custom-scrollbar ${
-                  isDark ? "bg-gray-900 border-gray-700 text-green-300" : "bg-gray-50 border-gray-200 text-green-700"
-                }`}>
-                  {section}
-                </pre>
+                {dslOpen && (
+                  <pre className={`border rounded p-3 text-xs font-mono whitespace-pre overflow-x-auto max-h-60 custom-scrollbar ${
+                    isDark ? "bg-gray-900 border-gray-700 text-green-300" : "bg-gray-50 border-gray-200 text-green-700"
+                  }`}>
+                    {section}
+                  </pre>
+                )}
               </div>
             );
           })()}
@@ -4843,7 +4912,7 @@ export const ParameterInputModal: React.FC<ParameterInputModalProps> = ({
               </button>
               <button
                 onClick={() => setShowCloseConfirm(false)}
-                className="px-4 py-2 text-sm bg-gray-700 hover:bg-gray-600 rounded-md font-semibold text-white transition-colors"
+                className="px-4 py-2 text-sm bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-md font-semibold text-gray-900 dark:text-white transition-colors"
               >
                 취소
               </button>
