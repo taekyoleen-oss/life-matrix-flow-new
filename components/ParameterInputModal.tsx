@@ -1994,6 +1994,21 @@ const LoadDataParams: React.FC<{
           )}
         </div>
       )}
+      {/* 데이터 설명(위치·출처) — 모델 저장 시 참조로 남는다. */}
+      <div className="mb-4">
+        <label className="block text-xs text-gray-400 mb-1">
+          데이터 설명(위치·출처)
+        </label>
+        <textarea
+          value={parameters.dataDescription || ""}
+          onChange={(e) =>
+            onParametersChange({ dataDescription: e.target.value })
+          }
+          rows={2}
+          placeholder="예: 사내 공유드라이브 /data/위험률.csv, 또는 https://… (참조 저장 시 데이터 위치를 남겨두세요)"
+          className="w-full bg-gray-900 border border-gray-600 rounded px-2 py-1.5 text-xs resize-y"
+        />
+      </div>
       {/* 파일 타입 표시 */}
       {parameters.fileType === "excel" && parameters.sheetName && (
         <div className="mb-2 text-xs text-gray-500">

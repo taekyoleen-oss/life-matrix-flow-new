@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useRef, useEffect, MouseEvent, TouchEvent, DragEvent, WheelEvent } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, MouseEvent, TouchEvent, DragEvent, WheelEvent } from 'react';
 import { CanvasModule, Connection, ModuleType, ModuleStatus } from '../types';
 import { ComponentRenderer as ModuleNode } from './ComponentRenderer';
 import { useTheme } from '../contexts/ThemeContext';
@@ -107,6 +107,24 @@ export const Canvas: React.FC<CanvasProps> = ({
         y: (portRect.top + portRect.height / 2 - canvasRect.top - pan.y) / scale
     };
   }, [scale, pan, canvasContainerRef]);
+
+  // 화살표(연결선) 초기 위치 어긋남 방지.
+  // 연결선은 렌더 중 getPortPosition()으로 포트 좌표를 구하는데, 포트 DOM이
+  // portRefs(useRef)에 등록되기 전 첫 렌더에서는 moduleHeight 근사 폴백 좌표로
+  // 그려진다. portRefs는 ref라 등록돼도 재렌더를 일으키지 않으므로, 모듈을
+  // 선택하는 등 다른 상태 변경이 있기 전까지 화살표가 어긋난 채 남는다.
+  // 모듈 구성(추가/삭제/타입 변경)이 바뀌면 portRefs가 commit 단계에서 채워진
+  // 뒤, 페인트 직전 useLayoutEffect로 1회 강제 재계산해 측정된 정확한 좌표로
+  // 다시 그린다(깜빡임 없음). 위치 드래그만 한 경우엔 구성 키가 그대로라 추가
+  // 재계산이 일어나지 않아 성능 영향이 없다.
+  const [, bumpConnectionLayout] = useState(0);
+  const moduleStructureKey = useMemo(
+    () => modules.map(m => `${m.id}:${m.type}`).join('|'),
+    [modules]
+  );
+  useLayoutEffect(() => {
+    bumpConnectionLayout(t => t + 1);
+  }, [moduleStructureKey]);
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault();

@@ -89,6 +89,17 @@ import {
   fetchAutoflowSampleById,
 } from "./utils/supabase-samples";
 import { savePipeline, loadPipeline } from "./utils/fileOperations";
+import {
+  bindDatasetsToModules,
+  contentSizeMB,
+  EMBED_SIZE_LIMIT_MB,
+  uploadDatasetToWeb,
+} from "./utils/datasetRegistry";
+import {
+  SaveModelOptionsModal,
+  type LoaderDataInfo,
+  type SaveDecisions,
+} from "./components/SaveModelOptionsModal";
 import { SlideReportButton } from "./components/SlideReportButton";
 import { RecomputeExportButton } from "./components/RecomputeExportButton";
 import { loadModuleDefault } from "./utils/moduleDefaults";
@@ -781,6 +792,15 @@ const App: React.FC = () => {
   const [showOverwriteConfirm, setShowOverwriteConfirm] = useState(false);
   const [pendingSample, setPendingSample] = useState<SampleData | null>(null);
   const [overwriteContext, setOverwriteContext] = useState<'shared' | 'personal' | null>(null);
+
+  // 모델 저장 옵션 모달(데이터 포함/제외/웹 등록/설명)
+  const [saveOptions, setSaveOptions] = useState<{
+    open: boolean;
+    mode: 'mywork';
+    name: string;
+    loaders: LoaderDataInfo[];
+  }>({ open: false, mode: 'mywork', name: '', loaders: [] });
+  const [isSavingModel, setIsSavingModel] = useState(false);
 
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -1870,6 +1890,16 @@ const App: React.FC = () => {
           `Successfully created ${newConnections.length} connections out of ${sampleModel.connections?.length || 0}`
         );
 
+        // 데이터 자동 바인딩: 파일명(source)만 있고 본문(fileContent)이 없는
+        // LoadData 모듈에 실제 CSV 본문을 주입한다(번들 레지스트리→Supabase 폴백).
+        // 이 앱 샘플은 fileContent를 동봉하므로 기존 동작은 불변이며(이미 본문이
+        // 있으면 건너뜀), 본문 없이 저장된 샘플/모델에 대해서만 가산적으로 작동한다.
+        try {
+          await bindDatasetsToModules(newModules);
+        } catch (bindErr) {
+          console.warn("Dataset auto-binding skipped:", bindErr);
+        }
+
         resetModules(newModules);
         _setConnections(newConnections);
         setProductName(sampleModel.name || sampleName || sampleModel.productName);
@@ -1921,25 +1951,129 @@ const App: React.FC = () => {
     }
   };
 
-  // Save to personal work (localStorage)
-  const handleSaveToPersonalWork = () => {
-    const newSample = createCleanSample();
+  // 이 앱의 데이터 로더 타입(LoadData 1종). 새 로더 타입이 생기면 여기에 추가.
+  const isLoaderModuleType = (type: string): boolean => type === ModuleType.LoadData;
 
-    // Check if work with same name exists
-    const existingIndex = personalWork.findIndex((s) => s.name === productName);
-
-    if (existingIndex >= 0) {
-      // Show overwrite confirmation
-      setPendingSample(newSample);
-      setOverwriteContext('personal');
-      setShowOverwriteConfirm(true);
-    } else {
-      // Add new work
-      const updatedWork = [...personalWork, newSample];
-      setPersonalWork(updatedWork);
-      savePersonalWork(updatedWork);
-      setIsMyWorkMenuOpen(false);
+  // 현재 캔버스에서 로더 모듈들의 저장 옵션용 정보를 수집한다.
+  const collectLoaderInfos = (): LoaderDataInfo[] => {
+    const infos: LoaderDataInfo[] = [];
+    for (const m of modules) {
+      if (!isLoaderModuleType(m.type as string)) continue;
+      const p = (m.parameters || {}) as Record<string, any>;
+      const content = typeof p.fileContent === "string" ? p.fileContent : "";
+      const hasContent = Boolean(content && content.trim());
+      infos.push({
+        moduleId: m.id,
+        name: m.name || (m.type as string),
+        source: String(p.source || "").trim(),
+        sizeMB: hasContent ? contentSizeMB(content) : 0,
+        hasContent,
+        description: String(p.dataDescription || "").trim(),
+      });
     }
+    return infos;
+  };
+
+  // 저장 옵션 모달을 연다(현재 모델 저장 진입점).
+  const openSaveOptions = (mode: 'mywork') => {
+    setIsMyWorkMenuOpen(false);
+    setSaveOptions({
+      open: true,
+      mode,
+      name: productName,
+      loaders: collectLoaderInfos(),
+    });
+  };
+
+  // localStorage 쿼터 초과 에러인지 판정(브라우저별 명칭 차이 대응).
+  const isQuotaError = (err: any): boolean => {
+    if (!err) return false;
+    const name = err.name || "";
+    const msg = String(err.message || err);
+    return (
+      name === "QuotaExceededError" ||
+      name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+      err.code === 22 ||
+      err.code === 1014 ||
+      /quota/i.test(msg)
+    );
+  };
+
+  // 저장 옵션 모달 확인 → 실제 저장 수행.
+  const performModelSave = async (name: string, decisions: SaveDecisions) => {
+    setIsSavingModel(true);
+    try {
+      // 1) 웹 등록 대상 먼저 업로드(참조 저장). 실패해도 저장 자체는 진행.
+      const uploadWarnings: string[] = [];
+      for (const l of saveOptions.loaders) {
+        const d = decisions[l.moduleId];
+        if (!d?.registerToWeb || !l.hasContent) continue;
+        const mod = modules.find((m) => m.id === l.moduleId);
+        const content = String((mod?.parameters as any)?.fileContent || "");
+        if (!content) continue;
+        const res = await uploadDatasetToWeb(l.source || name, content);
+        if (!res.ok) {
+          uploadWarnings.push(`${l.name}: ${res.error || "웹 등록 실패"}`);
+        }
+      }
+
+      // 2) 저장할 깨끗한 샘플 생성 후, 결정에 따라 로더별 데이터를 임베드/제외.
+      const baseSample = createCleanSample();
+      const sampleModules = baseSample.modules.map((m: any) => {
+        if (!isLoaderModuleType(m.type)) return m;
+        const d = decisions[m.id];
+        const params = { ...(m.parameters || {}) } as Record<string, any>;
+        if (d) {
+          // 데이터 설명은 항상 반영(포함 여부와 무관).
+          params.dataDescription = d.description || "";
+          if (!d.include) {
+            // 제외(참조만): 본문 제거 — 로드 시 datasetRegistry가 source로 재해석.
+            delete params.fileContent;
+          }
+        }
+        return { ...m, parameters: params };
+      });
+      const sample: SampleData = { ...baseSample, name, modules: sampleModules };
+
+      // 3) localStorage 저장(쿼터 초과 안전 처리). 동명 모델은 덮어쓰기.
+      const existingIndex = personalWork.findIndex((s) => s.name === name);
+      const updatedWork = [...personalWork];
+      if (existingIndex >= 0) updatedWork[existingIndex] = sample;
+      else updatedWork.push(sample);
+
+      try {
+        savePersonalWork(updatedWork); // 쿼터 초과 시 throw 가능
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          alert(
+            "브라우저 저장 공간이 부족합니다(쿼터 초과). 기존 데이터는 보존되었습니다.\n" +
+              "데이터 본문 '포함'을 해제하거나 '웹 예제로 등록(참조 저장)'을 사용해 다시 저장하세요."
+          );
+          return; // 상태 미반영 → 데이터 유실 방지
+        }
+        throw err;
+      }
+
+      // 저장 성공 시에만 상태 반영.
+      setPersonalWork(updatedWork);
+      setSaveOptions((s) => ({ ...s, open: false }));
+      if (uploadWarnings.length > 0) {
+        alert(
+          "모델은 저장되었으나 일부 데이터의 웹 등록에 실패했습니다:\n" +
+            uploadWarnings.join("\n")
+        );
+      }
+    } catch (err: any) {
+      console.error("모델 저장 실패:", err);
+      alert(`모델 저장 중 오류가 발생했습니다: ${err?.message || err}`);
+    } finally {
+      setIsSavingModel(false);
+    }
+  };
+
+  // Save to personal work (localStorage) — 저장 옵션 모달을 거친다.
+  const handleSaveToPersonalWork = () => {
+    openSaveOptions("mywork");
   };
 
   const handleSetAsInitial = () => {
@@ -4408,6 +4542,18 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 모델 저장 옵션 모달(데이터 포함/제외/웹 등록/설명) */}
+      <SaveModelOptionsModal
+        isOpen={saveOptions.open}
+        title="내 작업으로 저장"
+        defaultName={saveOptions.name}
+        loaders={saveOptions.loaders}
+        embedLimitMB={EMBED_SIZE_LIMIT_MB}
+        isSaving={isSavingModel}
+        onConfirm={performModelSave}
+        onClose={() => setSaveOptions((s) => ({ ...s, open: false }))}
+      />
 
       {/* Samples Modal */}
       <SamplesModal
