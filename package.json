@@ -20,7 +20,7 @@
     "postinstall": "node scripts/auto-build-sqlite3.js || echo 'better-sqlite3 자동 빌드 실패. 수동 빌드: pnpm approve-builds better-sqlite3'"
   },
   "dependencies": {
-    "@google/genai": "^1.21.0",
+    "@anthropic-ai/sdk": "^0.106.0",
     "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.97.0",
     "cors": "^2.8.5",

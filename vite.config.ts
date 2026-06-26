@@ -7,9 +7,9 @@ export default defineConfig(({ mode }) => {
     // Supabase: VITE_ 또는 NEXT_PUBLIC_ 값 노출
     const supabaseUrl = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || '';
     const supabaseKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY || '';
-    // Gemini 키는 개발 모드에서만 번들에 주입(개발자 폴백). 프로덕션 빌드에는 키를 포함하지 않는다.
+    // Claude(Anthropic) 키는 개발 모드에서만 번들에 주입(개발자 폴백). 프로덕션 빌드에는 키를 포함하지 않는다.
     // 일반 사용자는 앱 내 'AI 키 설정'에서 본인 키를 직접 입력해야 AI 기능 사용 가능.
-    const geminiKey = mode === 'development' ? (env.GEMINI_API_KEY || '') : '';
+    const anthropicKey = mode === 'development' ? (env.ANTHROPIC_API_KEY || '') : '';
     // 고급기능 잠금 해제 비밀번호 (소프트 잠금). 미설정 시 빈 값.
     const advancedPassword = env.VITE_ADVANCED_PASSWORD || '';
     return {
@@ -36,8 +36,8 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       define: {
-        'process.env.API_KEY': JSON.stringify(geminiKey),
-        'process.env.GEMINI_API_KEY': JSON.stringify(geminiKey),
+        'process.env.API_KEY': JSON.stringify(anthropicKey),
+        'process.env.ANTHROPIC_API_KEY': JSON.stringify(anthropicKey),
         'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(supabaseUrl),
         'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(supabaseKey),
         'import.meta.env.NEXT_PUBLIC_SUPABASE_URL': JSON.stringify(supabaseUrl),

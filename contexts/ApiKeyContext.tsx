@@ -4,7 +4,7 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 import {
   getStoredKey,
   setStoredKey,
@@ -18,8 +18,8 @@ interface ApiKeyContextType {
   setKey: (key: string) => void;
   clearKey: () => void;
   openKeyModal: () => void;
-  /** 키 있으면 GoogleGenAI 클라이언트 반환, 없으면 키 모달을 열고 null 반환. */
-  ensureClient: () => GoogleGenAI | null;
+  /** 키 있으면 Anthropic 클라이언트 반환, 없으면 키 모달을 열고 null 반환. */
+  ensureClient: () => Anthropic | null;
 }
 
 const ApiKeyContext = createContext<ApiKeyContextType | undefined>(undefined);
@@ -43,12 +43,12 @@ export const ApiKeyProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const openKeyModal = useCallback(() => setIsModalOpen(true), []);
 
-  const ensureClient = useCallback((): GoogleGenAI | null => {
+  const ensureClient = useCallback((): Anthropic | null => {
     if (!apiKey) {
       setIsModalOpen(true);
       return null;
     }
-    return new GoogleGenAI({ apiKey });
+    return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   }, [apiKey]);
 
   return (

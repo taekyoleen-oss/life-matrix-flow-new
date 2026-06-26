@@ -2121,16 +2121,30 @@ const App: React.FC = () => {
     setIsGeneratingPipeline(true);
     try {
       const prompt = buildPipelineGenerationPrompt(goal);
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
+      const response = await ai.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 16000,
+        messages: [{ role: "user", content: prompt }],
       });
-      const dslMarkdown = response.text ?? '';
+      const dslMarkdown = response.content
+        .filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("")
+        .trim();
       setAiGeneratedPlan(dslMarkdown);
       setIsAIPlanModalOpen(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error('AI pipeline generation failed:', err);
-      alert('파이프라인 생성 중 오류가 발생했습니다.');
+      const status = err?.status ?? err?.response?.status;
+      let msg = '파이프라인 생성 중 오류가 발생했습니다.';
+      if (status === 401 || status === 403) {
+        msg = 'Claude API 키가 올바르지 않거나 권한이 없습니다. \'AI 키 설정\'에서 키를 확인해 주세요.';
+      } else if (status === 429) {
+        msg = 'API 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.';
+      } else if (err?.name === 'APIConnectionError' || status === undefined) {
+        msg = '네트워크 오류로 AI 호출에 실패했습니다. 연결 상태를 확인해 주세요.';
+      }
+      alert(msg);
     } finally {
       setIsGeneratingPipeline(false);
     }
@@ -3604,7 +3618,7 @@ const App: React.FC = () => {
           <Tooltip
             content={featureTip(
               "AI 키 설정",
-              "AI 기능에 사용할 Gemini API 키를 입력·관리합니다.",
+              "AI 기능에 사용할 Claude API 키를 입력·관리합니다.",
               !advUnlocked
             )}
           >
@@ -3756,7 +3770,7 @@ const App: React.FC = () => {
           <Tooltip
             content={featureTip(
               "AI 생성",
-              "목표를 입력하면 AI가 보험료 산출 파이프라인을 자동 설계·생성합니다. (Gemini API 키 필요)",
+              "목표를 입력하면 AI가 보험료 산출 파이프라인을 자동 설계·생성합니다. (Claude API 키 필요)",
               !advUnlocked
             )}
           >

@@ -173,14 +173,29 @@ You are an actuary explaining a premium calculation result to a product manager 
 
 **지시:** 각 항목을 매우 간결하게 작성하십시오.
 `;
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
+      const response = await ai.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 8192,
+        messages: [{ role: "user", content: prompt }],
       });
-      setAiInterpretation(response.text);
-    } catch (error) {
+      const text = response.content
+        .filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("")
+        .trim();
+      setAiInterpretation(text);
+    } catch (error: any) {
       console.error("AI interpretation failed:", error);
-      setAiInterpretation("결과를 해석하는 동안 오류가 발생했습니다.");
+      const status = error?.status ?? error?.response?.status;
+      let msg = "결과를 해석하는 동안 오류가 발생했습니다.";
+      if (status === 401 || status === 403) {
+        msg = "API 키가 올바르지 않거나 권한이 없습니다. 'AI 키 설정'에서 키를 확인해 주세요.";
+      } else if (status === 429) {
+        msg = "API 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.";
+      } else if (error?.name === "APIConnectionError" || status === undefined) {
+        msg = "네트워크 오류로 AI 호출에 실패했습니다. 연결 상태를 확인해 주세요.";
+      }
+      setAiInterpretation(msg);
     } finally {
       setIsInterpreting(false);
     }

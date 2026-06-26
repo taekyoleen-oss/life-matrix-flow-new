@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 import { XCircleIcon, KeyIcon, CheckIcon } from "./icons";
 import { maskKey } from "../utils/apiKey";
 
@@ -40,19 +40,28 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
   const runTest = async (key: string): Promise<boolean> => {
     setTest({ status: "testing" });
     try {
-      const ai = new GoogleGenAI({ apiKey: key });
-      await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: "ping",
+      const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });
+      await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 4,
+        messages: [{ role: "user", content: "ping" }],
       });
       setTest({ status: "ok", message: "키가 정상 동작합니다." });
       return true;
-    } catch (e) {
+    } catch (e: any) {
       console.error("API key test failed:", e);
-      setTest({
-        status: "fail",
-        message: "키 검증에 실패했습니다. 키 값을 다시 확인해 주세요.",
-      });
+      const status = e?.status ?? e?.response?.status;
+      let message: string;
+      if (status === 401 || status === 403) {
+        message = "키가 올바르지 않거나 권한이 없습니다 (인증 실패). 키 값을 다시 확인해 주세요.";
+      } else if (status === 429) {
+        message = "요청 한도(rate limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.";
+      } else if (e?.name === "APIConnectionError" || status === undefined) {
+        message = "네트워크 오류로 키를 검증하지 못했습니다. 연결 상태를 확인해 주세요.";
+      } else {
+        message = `키 검증에 실패했습니다 (오류 ${status}). 키 값을 다시 확인해 주세요.`;
+      }
+      setTest({ status: "fail", message });
       return false;
     }
   };
@@ -84,7 +93,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
         <header className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <KeyIcon className="w-5 h-5 text-purple-500" />
-            Gemini API 키 설정
+            Claude API 키 설정
           </h2>
           <button
             onClick={onClose}
@@ -96,17 +105,17 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
         <main className="p-5 space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-            AI 기능(파이프라인 자동 생성 · 결과 해석)을 사용하려면 본인의 Gemini
+            AI 기능(파이프라인 자동 생성 · 결과 해석)을 사용하려면 본인의 Claude
             API 키가 필요합니다. 키는{" "}
             <a
-              href="https://aistudio.google.com/apikey"
+              href="https://console.anthropic.com/settings/keys"
               target="_blank"
               rel="noopener noreferrer"
               className="text-purple-600 dark:text-purple-400 font-medium underline"
             >
-              Google AI Studio
+              Anthropic Console
             </a>
-            에서 무료로 발급받을 수 있습니다.
+            에서 발급받을 수 있습니다.
           </p>
 
           {currentKey && (
@@ -136,7 +145,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
                   setInput(e.target.value);
                   if (test.status !== "idle") setTest({ status: "idle" });
                 }}
-                placeholder="AIza..."
+                placeholder="sk-ant-..."
                 autoComplete="off"
                 spellCheck={false}
                 className="flex-1 px-3 py-2 text-sm font-mono rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -163,7 +172,7 @@ export const ApiKeyModal: React.FC<ApiKeyModalProps> = ({
 
           <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-md p-3 leading-relaxed">
             🔒 키는 이 브라우저(localStorage)에만 저장되며 별도 서버로 전송되지
-            않습니다. AI 호출은 브라우저에서 Google API로 직접 전송됩니다. 공용
+            않습니다. AI 호출은 브라우저에서 Anthropic API로 직접 전송됩니다. 공용
             PC에서는 사용 후 <strong>키 삭제</strong>를 권장합니다.
           </div>
         </main>

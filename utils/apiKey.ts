@@ -1,7 +1,7 @@
-// Gemini API 키 저장 서비스 (순수 함수 — React 비의존)
+// Claude(Anthropic) API 키 저장 서비스 (순수 함수 — React 비의존)
 // 저장: localStorage(영구). 개발 모드에서만 .env 주입 키를 폴백으로 사용.
 
-const STORAGE_KEY = "gemini_api_key";
+const STORAGE_KEY = "anthropic_api_key";
 
 /**
  * vite.config.ts의 define이 dev 모드에서만 process.env.API_KEY에 실제 키를,
