@@ -567,6 +567,140 @@ const saveInitialState = (
   }
 };
 
+// ── 마지막 작업(localStorage 영구 저장) — '내 작업 > 마지막 작업 불러오기'용 ──
+// 초기 화면 설정(INITIAL_STATE_KEY)과 분리된 별도 키. 디바운스로 현재 작업을 영구 저장한다.
+// 대용량 fileContent는 별도 키에 저장(5MB 한도 회피). 브라우저를 닫아도 유지.
+const LAST_WORK_KEY = "lifeMatrixFlow_lastWork";
+const LAST_WORK_FILES_KEY = "lifeMatrixFlow_lastWork_files";
+const LAST_WORK_META_KEY = "lifeMatrixFlow_lastWork_meta";
+
+interface LastWorkMeta {
+  savedAt: number;
+  moduleCount: number;
+}
+
+// 마지막 작업 저장 시각을 사람이 읽기 좋은 상대/절대 시간으로 포맷.
+const formatSavedAt = (ts: number): string => {
+  if (!ts) return "";
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "방금 전";
+  if (min < 60) return `${min}분 전`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}시간 전`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}일 전`;
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return "";
+  }
+};
+
+const saveLastWork = (
+  modules: CanvasModule[],
+  connections: Connection[]
+): void => {
+  try {
+    const fileContents: Record<string, string> = {};
+    const cleanModules = modules.map((m) => {
+      const { outputData, ...rest } = m;
+      const params = { ...(m.parameters || {}) };
+      if (
+        params.fileContent &&
+        typeof params.fileContent === "string" &&
+        params.fileContent.length > 10000
+      ) {
+        fileContents[m.id] = params.fileContent;
+        params.fileContent = "__STORED_SEPARATELY__";
+      }
+      return { ...rest, status: ModuleStatus.Pending, parameters: params };
+    });
+    const savedAt = Date.now();
+    try {
+      if (Object.keys(fileContents).length > 0) {
+        localStorage.setItem(LAST_WORK_FILES_KEY, JSON.stringify(fileContents));
+      } else {
+        localStorage.removeItem(LAST_WORK_FILES_KEY);
+      }
+      localStorage.setItem(
+        LAST_WORK_KEY,
+        JSON.stringify({ modules: cleanModules, connections, savedAt })
+      );
+    } catch (_) {
+      // 용량 초과: 데이터 본문 제외하고 재시도(구조만 보존).
+      const stripped = cleanModules.map((m) => ({
+        ...m,
+        parameters: { ...m.parameters, fileContent: undefined },
+      }));
+      try {
+        localStorage.removeItem(LAST_WORK_FILES_KEY);
+      } catch {}
+      localStorage.setItem(
+        LAST_WORK_KEY,
+        JSON.stringify({ modules: stripped, connections, savedAt })
+      );
+    }
+    localStorage.setItem(
+      LAST_WORK_META_KEY,
+      JSON.stringify({ savedAt, moduleCount: cleanModules.length })
+    );
+  } catch (error) {
+    console.error("Failed to save last work to localStorage:", error);
+  }
+};
+
+const loadLastWork = (): {
+  modules: CanvasModule[];
+  connections: Connection[];
+  savedAt: number;
+} | null => {
+  try {
+    const saved = localStorage.getItem(LAST_WORK_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    if (!parsed?.modules?.length) return null;
+    let fileContents: Record<string, string> = {};
+    try {
+      const fc = localStorage.getItem(LAST_WORK_FILES_KEY);
+      if (fc) fileContents = JSON.parse(fc);
+    } catch {}
+    const modules = parsed.modules.map((m: any) => {
+      if (
+        m.parameters?.fileContent === "__STORED_SEPARATELY__" &&
+        fileContents[m.id]
+      ) {
+        return {
+          ...m,
+          parameters: { ...m.parameters, fileContent: fileContents[m.id] },
+        };
+      }
+      return m;
+    });
+    return {
+      modules,
+      connections: parsed.connections || [],
+      savedAt: parsed.savedAt || 0,
+    };
+  } catch (error) {
+    console.error("Failed to load last work from localStorage:", error);
+    return null;
+  }
+};
+
+const getLastWorkMeta = (): LastWorkMeta | null => {
+  try {
+    const raw = localStorage.getItem(LAST_WORK_META_KEY);
+    if (!raw) return null;
+    const meta = JSON.parse(raw);
+    if (!meta || typeof meta.savedAt !== "number" || !meta.moduleCount)
+      return null;
+    return meta as LastWorkMeta;
+  } catch (_) {
+    return null;
+  }
+};
+
 // ── 출력 이름 변경 추적 헬퍼 ──────────────────────────────────────────────────
 
 /**
@@ -781,10 +915,21 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleBeforeUnload = () => {
       saveInitialState(modulesRef.current, connectionsRef.current);
+      // 종료 시 마지막 작업도 함께 영구 저장.
+      saveLastWork(modulesRef.current, connectionsRef.current);
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, []);
+
+  // 마지막 작업 영구 저장(디바운스 800ms) — '내 작업 > 마지막 작업 불러오기'로 복원.
+  useEffect(() => {
+    if (modules.length === 0 && connections.length === 0) return;
+    const timer = setTimeout(() => {
+      saveLastWork(modules, connections);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [modules, connections]);
 
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
   const [productName, setProductName] = useState("New Life Product");
@@ -921,7 +1066,14 @@ const App: React.FC = () => {
   >([]);
   const [isLoadingSamples, setIsLoadingSamples] = useState(false);
   const [isMyWorkMenuOpen, setIsMyWorkMenuOpen] = useState(false);
-  
+  // 마지막 작업(localStorage 영구 저장) 메타 — '내 작업' 메뉴 버튼 라벨/활성화용
+  const [lastWorkMeta, setLastWorkMeta] = useState<LastWorkMeta | null>(null);
+
+  // '내 작업' 메뉴가 열릴 때 마지막 작업 메타를 새로고침(저장 시각·모듈 수 표시).
+  useEffect(() => {
+    if (isMyWorkMenuOpen) setLastWorkMeta(getLastWorkMeta());
+  }, [isMyWorkMenuOpen]);
+
   // Close menus when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -3853,6 +4005,58 @@ const App: React.FC = () => {
                   style={{ zIndex: 9999 }}
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {/* 마지막 작업 불러오기 (localStorage 영구 저장 — 브라우저를 닫아도 복원) */}
+                  <button
+                    onClick={() => {
+                      const snap = loadLastWork();
+                      if (!snap || !snap.modules?.length) {
+                        showToast("복원할 마지막 작업이 없습니다.", "info");
+                        setIsMyWorkMenuOpen(false);
+                        return;
+                      }
+                      const restored = snap.modules.map((m: any) => ({
+                        ...m,
+                        status: m.outputData
+                          ? ModuleStatus.Success
+                          : ModuleStatus.Pending,
+                      }));
+                      resetModules(restored as CanvasModule[]);
+                      _setConnections(snap.connections || []);
+                      setSelectedModuleIds([]);
+                      setIsDirty(false);
+                      showToast(
+                        `마지막 작업을 불러왔습니다 (${restored.length}개 모듈, ${formatSavedAt(
+                          snap.savedAt
+                        )} 저장).`,
+                        "success"
+                      );
+                      setIsMyWorkMenuOpen(false);
+                    }}
+                    disabled={!lastWorkMeta}
+                    className={`w-full text-left px-4 py-2 text-sm transition-colors flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 ${
+                      lastWorkMeta
+                        ? "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                        : "text-gray-400 dark:text-gray-600 cursor-not-allowed"
+                    }`}
+                    title="가장 최근에 작업한 모델을 복원합니다 (브라우저를 닫아도 유지)"
+                  >
+                    <span aria-hidden className="text-base leading-none">
+                      🕘
+                    </span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block font-medium">마지막 작업 불러오기</span>
+                      {lastWorkMeta ? (
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                          {formatSavedAt(lastWorkMeta.savedAt)} ·{" "}
+                          {lastWorkMeta.moduleCount}개 모듈
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 dark:text-gray-500">
+                          저장된 작업 없음
+                        </span>
+                      )}
+                    </span>
+                  </button>
                   <button
                     onClick={handleLoadPersonalWorkFromFile}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
