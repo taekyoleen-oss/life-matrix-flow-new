@@ -2231,7 +2231,7 @@ const App: React.FC = () => {
   const handleSetAsInitial = () => {
     const ok = saveInitialState(modules, connections);
     if (ok) {
-      setInitialSavedToast("✓ 초기 화면으로 설정되었습니다. 다음 실행 시 이 모델이 표시됩니다.");
+      setInitialSavedToast("✓ 시작 화면으로 지정되었습니다. 앱을 다시 열면 이 모델로 시작합니다.");
       setTimeout(() => setInitialSavedToast(null), 3000);
     } else {
       setInitialSavedToast("⚠ 저장에 실패했습니다. 파일 크기를 확인하세요.");
@@ -4061,15 +4061,21 @@ const App: React.FC = () => {
                     onClick={handleLoadPersonalWorkFromFile}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
                   >
-                    <FolderOpenIcon className="w-4 h-4 text-blue-400" />
-                    <span>파일에서 불러오기</span>
+                    <FolderOpenIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span>파일에서 불러오기</span>
+                      <span className="text-[10px] text-gray-400">내 PC의 저장 파일 열기</span>
+                    </div>
                   </button>
                   <button
                     onClick={handleSaveToPersonalWork}
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
                   >
-                    <PlusIcon className="w-4 h-4 text-blue-400" />
-                    <span>현재 모델 저장</span>
+                    <PlusIcon className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                    <div className="flex flex-col min-w-0">
+                      <span>현재 모델 저장</span>
+                      <span className="text-[10px] text-gray-400">이 브라우저에 저장 · 아래 목록에 추가</span>
+                    </div>
                   </button>
                   <button
                     onClick={
@@ -4081,16 +4087,16 @@ const App: React.FC = () => {
                           }
                     }
                     className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-2 border-b border-gray-200 dark:border-gray-700"
-                    title={advUnlocked ? "현재 캔버스 모델을 앱 시작 기본 화면으로 저장합니다" : "고급기능 — 잠금 해제 필요"}
+                    title={advUnlocked ? "앱을 다시 열 때 항상 이 모델로 시작합니다 (자동 복원되는 '마지막 작업'과 다름)" : "고급기능 — 잠금 해제 필요"}
                   >
                     {advUnlocked ? (
                       <SparklesIcon className="w-4 h-4 text-yellow-400" />
                     ) : (
                       <LockClosedIcon className="w-4 h-4 text-amber-500" />
                     )}
-                    <div className={`flex flex-col ${!advUnlocked ? "opacity-40" : ""}`}>
-                      <span className="text-green-400">초기 화면으로 설정</span>
-                      <span className="text-[10px] text-gray-400">현재 모델을 앱 시작 기본값으로 저장</span>
+                    <div className={`flex flex-col min-w-0 ${!advUnlocked ? "opacity-40" : ""}`}>
+                      <span className="text-green-400">시작 화면으로 지정</span>
+                      <span className="text-[10px] text-gray-400">앱을 다시 열 때 이 모델로 시작 (마지막 작업과 별개)</span>
                     </div>
                   </button>
                   <div className="p-2 text-xs font-bold text-gray-500 dark:text-gray-500 uppercase border-b border-gray-200 dark:border-gray-700">
